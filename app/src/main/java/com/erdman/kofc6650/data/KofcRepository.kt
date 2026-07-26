@@ -42,7 +42,14 @@ class KofcRepository {
     suspend fun getRecentPhotos(): List<SlidePhotoDto> =
         recentPhotosApi.getRecentPhotos(RECENT_PHOTOS_API_URL)
 
-    suspend fun getEvents(): List<EventDto> {
+    /** Only events with a SignUpGenius link, for the Volunteer Sign Ups tab. */
+    suspend fun getEvents(): List<EventDto> =
+        fetchEvents().filter { !it.signupUrl.isNullOrBlank() }
+
+    /** Every upcoming event, for the full agenda-style Calendar tab. */
+    suspend fun getAllEvents(): List<EventDto> = fetchEvents()
+
+    private suspend fun fetchEvents(): List<EventDto> {
         val timeMin = OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         val response = api.getEvents(
             calendarId = CALENDAR_ID,
@@ -53,7 +60,6 @@ class KofcRepository {
             .asSequence()
             .filter { it.status != "cancelled" }
             .mapNotNull { toEventDto(it) }
-            .filter { !it.signupUrl.isNullOrBlank() }
             .toList()
     }
 

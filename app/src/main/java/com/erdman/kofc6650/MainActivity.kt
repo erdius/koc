@@ -32,9 +32,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -104,6 +104,9 @@ fun KofcApp() {
     var events by remember { mutableStateOf<List<EventDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var eventsError by remember { mutableStateOf(false) }
+    var allEvents by remember { mutableStateOf<List<EventDto>>(emptyList()) }
+    var isLoadingAllEvents by remember { mutableStateOf(true) }
+    var allEventsError by remember { mutableStateOf(false) }
     var photos by remember { mutableStateOf<List<SlidePhotoDto>>(emptyList()) }
     var isLoadingPhotos by remember { mutableStateOf(true) }
     var photosError by remember { mutableStateOf(false) }
@@ -112,6 +115,8 @@ fun KofcApp() {
     LaunchedEffect(refreshTrigger) {
         isLoading = true
         eventsError = false
+        isLoadingAllEvents = true
+        allEventsError = false
         isLoadingPhotos = true
         photosError = false
         coroutineScope {
@@ -122,6 +127,13 @@ fun KofcApp() {
                     eventsError = true
                 }
             }
+            val allEventsDeferred = async {
+                try {
+                    allEvents = repository.getAllEvents()
+                } catch (e: Exception) {
+                    allEventsError = true
+                }
+            }
             val photosDeferred = async {
                 try {
                     photos = repository.getRecentPhotos()
@@ -130,9 +142,11 @@ fun KofcApp() {
                 }
             }
             eventsDeferred.await()
+            allEventsDeferred.await()
             photosDeferred.await()
         }
         isLoading = false
+        isLoadingAllEvents = false
         isLoadingPhotos = false
     }
 
@@ -176,10 +190,11 @@ fun KofcApp() {
                         }
                     },
                 )
-                TabRow(
+                ScrollableTabRow(
                     selectedTabIndex = tabIndex,
                     containerColor = KofcNavy,
                     contentColor = KofcGold,
+                    edgePadding = 12.dp,
                 ) {
                     Tab(
                         selected = tabIndex == 0,
@@ -189,11 +204,16 @@ fun KofcApp() {
                     Tab(
                         selected = tabIndex == 1,
                         onClick = { tabIndex = 1 },
-                        text = { Text("Submit Photos") },
+                        text = { Text("Calendar") },
                     )
                     Tab(
                         selected = tabIndex == 2,
                         onClick = { tabIndex = 2 },
+                        text = { Text("Submit Photos") },
+                    )
+                    Tab(
+                        selected = tabIndex == 3,
+                        onClick = { tabIndex = 3 },
                         text = { Text("Recent Photos") },
                     )
                 }
@@ -213,7 +233,19 @@ fun KofcApp() {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
                 )
+            } else if (tabIndex == 1 && isLoadingAllEvents) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = KofcNavy)
+                }
             } else if (tabIndex == 1) {
+                CalendarAgendaTab(
+                    events = allEvents,
+                    isError = allEventsError,
+                    onSignUpClick = { url ->
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    },
+                )
+            } else if (tabIndex == 2) {
                 PhotosTab(
                     onSubmitClick = {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PHOTOS_FORM_URL)))
@@ -253,6 +285,68 @@ private fun CalendarTab(
         item {
             Text(
                 text = "Sign ups for Upcoming Volunteer Opportunities",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        if (isError) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5))) {
+                    Text(
+                        text = "Could not load calendar events.",
+                        color = Color(0xFFC0392B),
+                        modifier = Modifier.padding(14.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+
+        if (!isError && upcoming.isEmpty()) {
+            item {
+                Text(
+                    text = "No upcoming events on the calendar.",
+                    color = Color(0xFF999999),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                )
+            }
+        }
+
+        items(upcoming) { event ->
+            EventCard(event = event, onSignUpClick = onSignUpClick)
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun CalendarAgendaTab(
+    events: List<EventDto>,
+    isError: Boolean,
+    onSignUpClick: (String) -> Unit,
+) {
+    val today = LocalDate.now()
+    val upcoming = events
+        .filter { event ->
+            val date = try {
+                LocalDate.parse(event.date)
+            } catch (e: Exception) {
+                null
+            }
+            date != null && !date.isBefore(today)
+        }
+        .sortedBy { it.date }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+    ) {
+        item {
+            Text(
+                text = "Upcoming Events",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
