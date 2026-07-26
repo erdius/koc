@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -52,6 +53,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.erdman.kofc6650.data.EventDto
 import com.erdman.kofc6650.data.KofcRepository
@@ -347,9 +350,11 @@ private fun RecentPhotosTab(
     photos: List<SlidePhotoDto>,
     isError: Boolean,
 ) {
+    var enlargedPhotoUrl by remember { mutableStateOf<String?>(null) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 32.dp),
     ) {
         item {
             Text(
@@ -393,10 +398,35 @@ private fun RecentPhotosTab(
                     model = photo.imageUrl,
                     contentDescription = null,
                     contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { enlargedPhotoUrl = photo.imageUrl },
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+
+    val enlargedUrl = enlargedPhotoUrl
+    if (enlargedUrl != null) {
+        Dialog(
+            onDismissRequest = { enlargedPhotoUrl = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.9f))
+                    .clickable { enlargedPhotoUrl = null },
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = enlargedUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                )
+            }
         }
     }
 }
