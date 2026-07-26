@@ -42,12 +42,17 @@ class KofcRepository {
     suspend fun getRecentPhotos(): List<SlidePhotoDto> =
         recentPhotosApi.getRecentPhotos(RECENT_PHOTOS_API_URL)
 
-    /** Only events with a SignUpGenius link, for the Volunteer Sign Ups tab. */
-    suspend fun getEvents(): List<EventDto> =
-        fetchEvents().filter { !it.signupUrl.isNullOrBlank() }
-
-    /** Every upcoming event, for the full agenda-style Calendar tab. */
-    suspend fun getAllEvents(): List<EventDto> = fetchEvents()
+    /**
+     * Fetches the calendar once and returns both views the app needs:
+     * every upcoming event (Calendar tab) and just the subset with a
+     * SignUpGenius link (Volunteer Sign Ups tab). Both tabs used to make
+     * their own identical API call; this merges them into one round trip.
+     */
+    suspend fun getCouncilEvents(): CouncilEvents {
+        val all = fetchEvents()
+        val signupOnly = all.filter { !it.signupUrl.isNullOrBlank() }
+        return CouncilEvents(signupEvents = signupOnly, allEvents = all)
+    }
 
     private suspend fun fetchEvents(): List<EventDto> {
         val timeMin = OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)

@@ -13,3 +13,8 @@ data class EventDto(
     val description: String?,
     @Json(name = "signupUrl") val signupUrl: String?,
 )
+
+data class CouncilEvents(
+    val signupEvents: List<EventDto>,
+    val allEvents: List<EventDto>,
+)

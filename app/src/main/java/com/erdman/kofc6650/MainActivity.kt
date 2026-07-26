@@ -72,7 +72,7 @@ import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 
 private const val PHOTOS_FORM_URL =
     "https://docs.google.com/forms/d/e/1FAIpQLSemHls6xz9BRhMuy3QruxiSw6fcHOEYG94NBcuCWmnZ-S3j1A/viewform"
@@ -125,34 +125,29 @@ fun KofcApp() {
         isLoadingPhotos = true
         photosError = false
         coroutineScope {
-            val eventsDeferred = async {
+            launch {
                 try {
-                    events = repository.getEvents()
+                    val bundle = repository.getCouncilEvents()
+                    events = bundle.signupEvents
+                    allEvents = bundle.allEvents
                 } catch (e: Exception) {
                     eventsError = true
-                }
-            }
-            val allEventsDeferred = async {
-                try {
-                    allEvents = repository.getAllEvents()
-                } catch (e: Exception) {
                     allEventsError = true
+                } finally {
+                    isLoading = false
+                    isLoadingAllEvents = false
                 }
             }
-            val photosDeferred = async {
+            launch {
                 try {
                     photos = repository.getRecentPhotos()
                 } catch (e: Exception) {
                     photosError = true
+                } finally {
+                    isLoadingPhotos = false
                 }
             }
-            eventsDeferred.await()
-            allEventsDeferred.await()
-            photosDeferred.await()
         }
-        isLoading = false
-        isLoadingAllEvents = false
-        isLoadingPhotos = false
     }
 
     Scaffold(
