@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,6 +53,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -123,6 +127,26 @@ fun KofcApp() {
     var isLoadingPhotos by remember { mutableStateOf(true) }
     var photosError by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
+
+    // Refetch whenever the app comes back to the foreground, so events/photos
+    // added elsewhere show up without the user having to remember to tap the
+    // refresh button. Skips the very first resume, which fires immediately
+    // on launch and would otherwise double the initial fetch.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var isFirstResume = true
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (isFirstResume) {
+                    isFirstResume = false
+                } else {
+                    refreshTrigger++
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(refreshTrigger) {
         isLoading = true
@@ -275,7 +299,7 @@ private fun CreateSignUpLink(onClick: () -> Unit) {
         pushStringAnnotation(tag = "URL", annotation = SIGNUP_GENIUS_URL)
         withStyle(
             style = SpanStyle(
-                color = KofcNavy,
+                color = KofcGold,
                 textDecoration = TextDecoration.Underline,
                 fontWeight = FontWeight.SemiBold,
             ),
@@ -287,7 +311,10 @@ private fun CreateSignUpLink(onClick: () -> Unit) {
     }
     ClickableText(
         text = annotatedText,
-        style = ComposeTextStyle(fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground),
+        style = ComposeTextStyle(
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onBackground,
+        ),
         onClick = { offset ->
             annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
                 .firstOrNull()
