@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,7 +56,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.TextStyle as ComposeTextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -76,6 +82,7 @@ import kotlinx.coroutines.launch
 
 private const val PHOTOS_FORM_URL =
     "https://docs.google.com/forms/d/e/1FAIpQLSemHls6xz9BRhMuy3QruxiSw6fcHOEYG94NBcuCWmnZ-S3j1A/viewform"
+private const val SIGNUP_GENIUS_URL = "https://www.signupgenius.com/"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -263,6 +270,33 @@ fun KofcApp() {
 }
 
 @Composable
+private fun CreateSignUpLink(onClick: () -> Unit) {
+    val annotatedText = buildAnnotatedString {
+        pushStringAnnotation(tag = "URL", annotation = SIGNUP_GENIUS_URL)
+        withStyle(
+            style = SpanStyle(
+                color = KofcNavy,
+                textDecoration = TextDecoration.Underline,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        ) {
+            append("Click here")
+        }
+        pop()
+        append(" to create a new sign-up")
+    }
+    ClickableText(
+        text = annotatedText,
+        style = ComposeTextStyle(fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground),
+        onClick = { offset ->
+            annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                .firstOrNull()
+                ?.let { onClick() }
+        },
+    )
+}
+
+@Composable
 private fun CalendarTab(
     events: List<EventDto>,
     isError: Boolean,
@@ -289,6 +323,8 @@ private fun CalendarTab(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            CreateSignUpLink(onClick = { onSignUpClick(SIGNUP_GENIUS_URL) })
             Spacer(modifier = Modifier.height(16.dp))
         }
 
