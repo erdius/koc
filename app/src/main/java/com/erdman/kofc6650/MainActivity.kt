@@ -73,7 +73,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.erdman.kofc6650.data.EventDto
 import com.erdman.kofc6650.data.KofcRepository
-import com.erdman.kofc6650.data.SlidePhotoDto
+import com.erdman.kofc6650.data.RecentPhotoDto
 import com.erdman.kofc6650.ui.theme.KofC6650Theme
 import com.erdman.kofc6650.ui.theme.KofcGold
 import com.erdman.kofc6650.ui.theme.KofcGoldMuted
@@ -123,7 +123,7 @@ fun KofcApp() {
     var allEvents by remember { mutableStateOf<List<EventDto>>(emptyList()) }
     var isLoadingAllEvents by remember { mutableStateOf(true) }
     var allEventsError by remember { mutableStateOf(false) }
-    var photos by remember { mutableStateOf<List<SlidePhotoDto>>(emptyList()) }
+    var photos by remember { mutableStateOf<List<RecentPhotoDto>>(emptyList()) }
     var isLoadingPhotos by remember { mutableStateOf(true) }
     var photosError by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
@@ -504,7 +504,7 @@ private fun PhotosTab(onSubmitClick: () -> Unit) {
 
 @Composable
 private fun RecentPhotosTab(
-    photos: List<SlidePhotoDto>,
+    photos: List<RecentPhotoDto>,
     isError: Boolean,
 ) {
     var enlargedPhotoUrl by remember { mutableStateOf<String?>(null) }

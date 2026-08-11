@@ -39,7 +39,7 @@ class KofcRepository {
     private val api = retrofit.create(GoogleCalendarApi::class.java)
     private val recentPhotosApi = retrofit.create(RecentPhotosApi::class.java)
 
-    suspend fun getRecentPhotos(): List<SlidePhotoDto> =
+    suspend fun getRecentPhotos(): List<RecentPhotoDto> =
         recentPhotosApi.getRecentPhotos(RECENT_PHOTOS_API_URL)
 
     /**
@@ -93,8 +93,7 @@ class KofcRepository {
         private const val GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/"
         private const val CALENDAR_ID = "3j9ina0035sbq5u2f7s4oafua4@group.calendar.google.com"
         private const val API_KEY = "AIzaSyDMVWRq8ykzhqKCVxiavbEfLLbvaIdahfU"
-        private const val RECENT_PHOTOS_API_URL =
-            "https://script.google.com/macros/s/AKfycbw-qJ3atc8-rZ5diar3Js67_ZAXusVsZ2I56yBz4rsLI4fKI0r0aTlCoxSyzNjSrU_V/exec"
+        private const val RECENT_PHOTOS_API_URL = "https://photos.koc.erdcloud.org/api/photos"
 
         private val TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
         private val SIGNUP_URL_REGEX =
