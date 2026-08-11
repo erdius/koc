@@ -93,7 +93,7 @@ class KofcRepository {
         private const val GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/"
         private const val CALENDAR_ID = "3j9ina0035sbq5u2f7s4oafua4@group.calendar.google.com"
         private const val API_KEY = "AIzaSyDMVWRq8ykzhqKCVxiavbEfLLbvaIdahfU"
-        private const val RECENT_PHOTOS_API_URL = "https://photos.koc.erdcloud.org/api/photos"
+        private const val RECENT_PHOTOS_API_URL = "https://koc-photos.erdcloud.org/api/photos"
 
         private val TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
         private val SIGNUP_URL_REGEX =
