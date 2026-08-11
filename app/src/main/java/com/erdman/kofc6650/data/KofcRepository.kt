@@ -2,7 +2,13 @@ package com.erdman.kofc6650.data
 
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.time.OffsetDateTime
@@ -30,6 +36,15 @@ class KofcRepository {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
+    // Photo uploads can involve several full-resolution images over a mobile
+    // connection, so this needs much more headroom than the quick JSON
+    // GETs the client above is tuned for.
+    private val uploadHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     private val retrofit = Retrofit.Builder()
         .baseUrl(GOOGLE_CALENDAR_BASE_URL)
         .client(okHttpClient)
@@ -41,6 +56,42 @@ class KofcRepository {
 
     suspend fun getRecentPhotos(): List<RecentPhotoDto> =
         recentPhotosApi.getRecentPhotos(RECENT_PHOTOS_API_URL)
+
+    suspend fun uploadPhotos(
+        pin: String,
+        name: String,
+        caption: String,
+        files: List<PhotoUploadFile>,
+    ): PhotoUploadResponseDto = withContext(Dispatchers.IO) {
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("pin", pin)
+            .addFormDataPart("name", name)
+            .addFormDataPart("caption", caption)
+            .apply {
+                files.forEach { file ->
+                    addFormDataPart(
+                        "photos",
+                        file.filename,
+                        file.bytes.toRequestBody(file.mimeType.toMediaTypeOrNull()),
+                    )
+                }
+            }
+            .build()
+
+        val request = Request.Builder().url(PHOTOS_UPLOAD_API_URL).post(body).build()
+        uploadHttpClient.newCall(request).execute().use { response ->
+            val bodyStr = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val message = runCatching {
+                    moshi.adapter(UploadErrorResponseDto::class.java).fromJson(bodyStr)?.error
+                }.getOrNull() ?: "Upload failed (HTTP ${response.code})"
+                throw PhotoUploadException(message)
+            }
+            moshi.adapter(PhotoUploadResponseDto::class.java).fromJson(bodyStr)
+                ?: throw PhotoUploadException("Unexpected response from server")
+        }
+    }
 
     /**
      * Fetches the calendar once and returns both views the app needs:
@@ -94,6 +145,7 @@ class KofcRepository {
         private const val CALENDAR_ID = "3j9ina0035sbq5u2f7s4oafua4@group.calendar.google.com"
         private const val API_KEY = "AIzaSyDMVWRq8ykzhqKCVxiavbEfLLbvaIdahfU"
         private const val RECENT_PHOTOS_API_URL = "https://koc-photos.erdcloud.org/api/photos"
+        private const val PHOTOS_UPLOAD_API_URL = "https://koc-photos.erdcloud.org/api/upload"
 
         private val TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
         private val SIGNUP_URL_REGEX =

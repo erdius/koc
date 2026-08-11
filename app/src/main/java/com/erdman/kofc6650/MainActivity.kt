@@ -4,11 +4,16 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
@@ -48,9 +54,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -73,6 +81,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.erdman.kofc6650.data.EventDto
 import com.erdman.kofc6650.data.KofcRepository
+import com.erdman.kofc6650.data.PhotoUploadFile
 import com.erdman.kofc6650.data.RecentPhotoDto
 import com.erdman.kofc6650.ui.theme.KofC6650Theme
 import com.erdman.kofc6650.ui.theme.KofcGold
@@ -84,7 +93,6 @@ import java.util.Locale
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
-private const val PHOTOS_UPLOAD_URL = "https://koc-photos.erdcloud.org/"
 private const val SIGNUP_GENIUS_URL = "https://www.signupgenius.com/"
 
 class MainActivity : ComponentActivity() {
@@ -276,11 +284,7 @@ fun KofcApp() {
                     },
                 )
             } else if (tabIndex == 2) {
-                PhotosTab(
-                    onSubmitClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PHOTOS_UPLOAD_URL)))
-                    },
-                )
+                PhotosTab(repository = repository)
             } else if (isLoadingPhotos) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = KofcNavy)
@@ -447,7 +451,22 @@ private fun CalendarAgendaTab(
 }
 
 @Composable
-private fun PhotosTab(onSubmitClick: () -> Unit) {
+private fun PhotosTab(repository: KofcRepository) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var pin by remember { mutableStateOf("") }
+    var submitterName by remember { mutableStateOf("") }
+    var caption by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    var statusIsError by remember { mutableStateOf(false) }
+
+    val pickPhotosLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20),
+    ) { uris -> selectedUris = uris }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -480,20 +499,159 @@ private fun PhotosTab(onSubmitClick: () -> Unit) {
                         color = KofcGoldMuted,
                     )
                     Text(
-                        text = "Tap below to open the upload page — you can select multiple photos at once, no Google account needed.",
+                        text = "Choose photos from your gallery, add the council PIN, and submit — no Google account needed.",
                         fontSize = 14.sp,
                         color = Color(0xFF555555),
                         modifier = Modifier.padding(top = 8.dp),
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    androidx.compose.material3.OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it },
+                        label = { Text("Council PIN") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = submitterName,
+                        onValueChange = { submitterName = it },
+                        label = { Text("Your name (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = caption,
+                        onValueChange = { caption = it },
+                        label = { Text("Caption (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
                     Button(
-                        onClick = onSubmitClick,
+                        onClick = {
+                            pickPhotosLauncher.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                ),
+                            )
+                        },
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                             containerColor = KofcNavy,
                             contentColor = KofcGold,
                         ),
-                        modifier = Modifier.padding(top = 10.dp),
                     ) {
-                        Text("Submit Photos →")
+                        Text(
+                            if (selectedUris.isEmpty()) {
+                                "Choose Photos from Gallery"
+                            } else {
+                                "${selectedUris.size} photo${if (selectedUris.size == 1) "" else "s"} selected — change"
+                            },
+                        )
+                    }
+
+                    if (selectedUris.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            selectedUris.forEach { uri ->
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(RoundedCornerShape(6.dp)),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Button(
+                        onClick = {
+                            when {
+                                pin.isBlank() -> {
+                                    statusIsError = true
+                                    statusMessage = "Enter the council PIN"
+                                }
+                                selectedUris.isEmpty() -> {
+                                    statusIsError = true
+                                    statusMessage = "Choose at least one photo"
+                                }
+                                else -> {
+                                    isSubmitting = true
+                                    statusMessage = null
+                                    scope.launch {
+                                        try {
+                                            val files = selectedUris.mapIndexedNotNull { index, uri ->
+                                                val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+                                                val bytes = context.contentResolver.openInputStream(uri)
+                                                    ?.use { it.readBytes() }
+                                                bytes?.let {
+                                                    PhotoUploadFile(
+                                                        bytes = it,
+                                                        filename = "photo_$index.${mimeType.substringAfter('/').ifBlank { "jpg" }}",
+                                                        mimeType = mimeType,
+                                                    )
+                                                }
+                                            }
+                                            val result = repository.uploadPhotos(pin, submitterName, caption, files)
+                                            statusIsError = false
+                                            statusMessage =
+                                                "Uploaded ${result.saved} photo${if (result.saved == 1) "" else "s"}. Thank you!"
+                                            selectedUris = emptyList()
+                                            pin = ""
+                                            submitterName = ""
+                                            caption = ""
+                                        } catch (e: Exception) {
+                                            statusIsError = true
+                                            statusMessage = e.message ?: "Something went wrong"
+                                        } finally {
+                                            isSubmitting = false
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !isSubmitting,
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = KofcNavy,
+                            contentColor = KofcGold,
+                        ),
+                    ) {
+                        if (isSubmitting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = KofcGold,
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Text("Submit Photos")
+                        }
+                    }
+
+                    statusMessage?.let { msg ->
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = msg,
+                            fontSize = 13.sp,
+                            color = if (statusIsError) Color(0xFFA12626) else Color(0xFF1E6B34),
+                        )
                     }
                 }
             }
