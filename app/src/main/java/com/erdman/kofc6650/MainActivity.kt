@@ -84,8 +84,7 @@ import java.util.Locale
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
-private const val PHOTOS_FORM_URL =
-    "https://docs.google.com/forms/d/e/1FAIpQLSemHls6xz9BRhMuy3QruxiSw6fcHOEYG94NBcuCWmnZ-S3j1A/viewform"
+private const val PHOTOS_UPLOAD_URL = "https://koc-photos.erdcloud.org/"
 private const val SIGNUP_GENIUS_URL = "https://www.signupgenius.com/"
 
 class MainActivity : ComponentActivity() {
@@ -279,7 +278,7 @@ fun KofcApp() {
             } else if (tabIndex == 2) {
                 PhotosTab(
                     onSubmitClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PHOTOS_FORM_URL)))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PHOTOS_UPLOAD_URL)))
                     },
                 )
             } else if (isLoadingPhotos) {
@@ -481,7 +480,7 @@ private fun PhotosTab(onSubmitClick: () -> Unit) {
                         color = KofcGoldMuted,
                     )
                     Text(
-                        text = "Photos are collected through a short Google Form. Tap below to open it and upload your pictures.",
+                        text = "Tap below to open the upload page — you can select multiple photos at once, no Google account needed.",
                         fontSize = 14.sp,
                         color = Color(0xFF555555),
                         modifier = Modifier.padding(top = 8.dp),
