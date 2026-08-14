@@ -12,6 +12,7 @@ data class EventDto(
     val location: String?,
     val description: String?,
     @Json(name = "signupUrl") val signupUrl: String?,
+    @Json(name = "linkUrl") val linkUrl: String? = null,
 )
 
 data class CouncilEvents(

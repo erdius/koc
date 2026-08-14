@@ -12,14 +12,14 @@ val keystoreProperties = Properties().apply {
 
 android {
     namespace = "com.erdman.kofc6650"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.erdman.kofc6650"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 4
-        versionName = "1.0.3"
+        targetSdk = 36
+        versionCode = 6
+        versionName = "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

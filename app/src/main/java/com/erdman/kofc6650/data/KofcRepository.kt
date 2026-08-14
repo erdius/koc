@@ -123,6 +123,11 @@ class KofcRepository {
         val start = event.start ?: return null
         val date = start.date ?: start.dateTime?.substringBefore("T") ?: return null
         val time = start.dateTime?.let { formatTime(it) }.orEmpty()
+        val signupUrl = extractSignupUrl(event.description)
+        // Non-SignupGenius links (e.g. a Zoom join link) aren't "volunteer
+        // sign ups", so they're kept out of signupUrl (which drives the
+        // Volunteer Sign Ups tab filter) and surfaced separately instead.
+        val linkUrl = if (signupUrl == null) extractGenericUrl(event.description) else null
         return EventDto(
             id = event.id,
             title = event.summary ?: "Untitled",
@@ -130,7 +135,8 @@ class KofcRepository {
             time = time,
             location = event.location,
             description = cleanDescription(event.description),
-            signupUrl = extractSignupUrl(event.description),
+            signupUrl = signupUrl,
+            linkUrl = linkUrl,
         )
     }
 
@@ -158,6 +164,11 @@ class KofcRepository {
         private fun extractSignupUrl(text: String?): String? {
             if (text.isNullOrBlank()) return null
             return SIGNUP_URL_REGEX.find(text)?.value
+        }
+
+        private fun extractGenericUrl(text: String?): String? {
+            if (text.isNullOrBlank()) return null
+            return BARE_URL_REGEX.find(text)?.value?.trimEnd('.', ',', ')', ']')
         }
 
         private fun cleanDescription(text: String?): String {

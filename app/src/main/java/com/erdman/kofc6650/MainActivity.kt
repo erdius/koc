@@ -820,6 +820,17 @@ private fun EventCard(
                 ) {
                     Text("Sign Up to Volunteer →")
                 }
+            } else if (!event.linkUrl.isNullOrBlank()) {
+                Button(
+                    onClick = { onSignUpClick(event.linkUrl) },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = KofcNavy,
+                        contentColor = KofcGold,
+                    ),
+                    modifier = Modifier.padding(top = 10.dp),
+                ) {
+                    Text("Open Link →")
+                }
             }
         }
     }
