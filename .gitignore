@@ -24,3 +24,7 @@ out/
 captures/
 .cxx/
 *.log
+
+# Play Console notes/release-notes drafts sometimes contain the app PIN in
+# plaintext (App access section for reviewers) — keep local, not on GitHub.
+/play-store/
