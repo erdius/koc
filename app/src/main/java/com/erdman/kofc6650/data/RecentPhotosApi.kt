@@ -6,4 +6,7 @@ import retrofit2.http.Url
 interface RecentPhotosApi {
     @GET
     suspend fun getRecentPhotos(@Url url: String): List<RecentPhotoDto>
+
+    @GET
+    suspend fun getArchiveMonths(@Url url: String): List<ArchiveMonthDto>
 }

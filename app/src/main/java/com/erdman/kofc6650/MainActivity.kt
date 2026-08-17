@@ -26,11 +26,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -90,9 +92,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.erdman.kofc6650.data.ArchiveMonthDto
 import com.erdman.kofc6650.data.EventDto
 import com.erdman.kofc6650.data.FontScalePreference
 import com.erdman.kofc6650.data.KofcRepository
+import com.erdman.kofc6650.data.LeadershipContact
+import com.erdman.kofc6650.data.LeadershipDirectory
 import com.erdman.kofc6650.data.PhotoUploadFile
 import com.erdman.kofc6650.data.PinManager
 import com.erdman.kofc6650.data.RecentPhotoDto
@@ -155,6 +160,7 @@ fun KofcApp() {
     CompositionLocalProvider(LocalDensity provides scaledDensity) {
 
     var showAbout by remember { mutableStateOf(false) }
+    var showDirectorsOfficers by remember { mutableStateOf(false) }
     var tabIndex by remember { mutableIntStateOf(0) }
     var events by remember { mutableStateOf<List<EventDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -255,6 +261,9 @@ fun KofcApp() {
                         }
                     },
                     actions = {
+                        IconButton(onClick = { showDirectorsOfficers = true }) {
+                            Icon(Icons.Default.Email, contentDescription = "Directors & Officers", tint = KofcGold)
+                        }
                         IconButton(onClick = { showAbout = true }) {
                             Icon(Icons.Default.Info, contentDescription = "About", tint = KofcGold)
                         }
@@ -325,13 +334,17 @@ fun KofcApp() {
                     CircularProgressIndicator(color = KofcNavy)
                 }
             } else {
-                RecentPhotosTab(photos = photos, isError = photosError)
+                RecentPhotosTab(repository = repository, photos = photos, isError = photosError)
             }
         }
     }
 
     if (showAbout) {
         AboutDialog(pinManager = pinManager, fontScalePref = fontScalePref, onDismiss = { showAbout = false })
+    }
+
+    if (showDirectorsOfficers) {
+        DirectorsOfficersDialog(onDismiss = { showDirectorsOfficers = false })
     }
 
     } // CompositionLocalProvider(LocalDensity)
@@ -404,6 +417,95 @@ private fun AboutDialog(pinManager: PinManager, fontScalePref: FontScalePreferen
             }
         },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DirectorsOfficersDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = KofcNavy,
+                        titleContentColor = KofcGold,
+                    ),
+                    title = { Text("Directors & Officers") },
+                    actions = {
+                        TextButton(onClick = onDismiss) {
+                            Text("Done", color = KofcGold)
+                        }
+                    },
+                )
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    leadershipSection(title = "App", contacts = LeadershipDirectory.developer) { email ->
+                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
+                    }
+                    leadershipSection(title = "Officers", contacts = LeadershipDirectory.officers) { email ->
+                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
+                    }
+                    leadershipSection(title = "Directors", contacts = LeadershipDirectory.directors) { email ->
+                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun LazyListScope.leadershipSection(
+    title: String,
+    contacts: List<LeadershipContact>,
+    onEmailClick: (String) -> Unit,
+) {
+    item {
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = KofcGoldMuted,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    }
+    items(contacts) { contact ->
+        LeadershipRow(contact = contact, onEmailClick = onEmailClick)
+        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+    }
+}
+
+@Composable
+private fun LeadershipRow(contact: LeadershipContact, onEmailClick: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (contact.email != null) {
+                    Modifier.clickable { onEmailClick(contact.email) }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = contact.title,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = KofcGoldMuted,
+            )
+            Text(
+                text = contact.name,
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        if (contact.email != null) {
+            Icon(Icons.Default.Email, contentDescription = "Email", tint = MaterialTheme.colorScheme.primary)
+        }
+    }
 }
 
 @Composable
@@ -874,30 +976,97 @@ private fun PhotosTab(repository: KofcRepository, pinManager: PinManager) {
 
 @Composable
 private fun RecentPhotosTab(
+    repository: KofcRepository,
     photos: List<RecentPhotoDto>,
     isError: Boolean,
 ) {
     var enlargedPhotoUrl by remember { mutableStateOf<String?>(null) }
+
+    // Archive browsing: null selectedMonth means "current month" (the
+    // photos/isError passed in from KofcApp's own refresh cycle). Picking a
+    // past month fetches and displays that month's photos instead, without
+    // touching the current-month state owned by the caller.
+    var showMonthPicker by remember { mutableStateOf(false) }
+    var archiveMonths by remember { mutableStateOf<List<ArchiveMonthDto>>(emptyList()) }
+    var isLoadingArchiveMonths by remember { mutableStateOf(false) }
+    var selectedMonth by remember { mutableStateOf<ArchiveMonthDto?>(null) }
+    var archivePhotos by remember { mutableStateOf<List<RecentPhotoDto>>(emptyList()) }
+    var isLoadingArchivePhotos by remember { mutableStateOf(false) }
+    var archiveError by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showMonthPicker) {
+        if (showMonthPicker && archiveMonths.isEmpty()) {
+            isLoadingArchiveMonths = true
+            try {
+                archiveMonths = repository.getPhotoArchiveMonths()
+            } catch (e: Exception) {
+                // Leave archiveMonths empty; the picker shows "No archived photos yet."
+            } finally {
+                isLoadingArchiveMonths = false
+            }
+        }
+    }
+
+    LaunchedEffect(selectedMonth) {
+        val month = selectedMonth ?: return@LaunchedEffect
+        isLoadingArchivePhotos = true
+        archiveError = false
+        try {
+            archivePhotos = repository.getArchivedPhotos(month.month)
+        } catch (e: Exception) {
+            archiveError = true
+        } finally {
+            isLoadingArchivePhotos = false
+        }
+    }
+
+    val viewingArchive = selectedMonth != null
+    val displayedPhotos = if (viewingArchive) archivePhotos else photos
+    val displayedIsError = if (viewingArchive) archiveError else isError
+    val displayedIsLoading = viewingArchive && isLoadingArchivePhotos
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 32.dp),
     ) {
         item {
-            Text(
-                text = "Recent Photos",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = selectedMonth?.label ?: "Recent Photos",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                TextButton(onClick = {
+                    if (viewingArchive) {
+                        selectedMonth = null
+                    } else {
+                        showMonthPicker = true
+                    }
+                }) {
+                    Text(if (viewingArchive) "Back to Recent" else "Browse Past Months")
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        if (isError) {
+        if (displayedIsLoading) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = KofcNavy)
+                }
+            }
+        }
+
+        if (displayedIsError) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5))) {
                     Text(
-                        text = "Could not load recent photos.",
+                        text = if (viewingArchive) "Could not load photos for this month." else "Could not load recent photos.",
                         color = Color(0xFFC0392B),
                         modifier = Modifier.padding(14.dp),
                     )
@@ -906,17 +1075,17 @@ private fun RecentPhotosTab(
             }
         }
 
-        if (!isError && photos.isEmpty()) {
+        if (!displayedIsLoading && !displayedIsError && displayedPhotos.isEmpty()) {
             item {
                 Text(
-                    text = "No photos yet.",
+                    text = if (viewingArchive) "No photos for this month." else "No photos yet.",
                     color = Color(0xFF999999),
                     modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
                 )
             }
         }
 
-        items(photos) { photo ->
+        items(displayedPhotos) { photo ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -932,6 +1101,37 @@ private fun RecentPhotosTab(
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
+    }
+
+    if (showMonthPicker) {
+        AlertDialog(
+            onDismissRequest = { showMonthPicker = false },
+            title = { Text("Browse Past Months") },
+            text = {
+                when {
+                    isLoadingArchiveMonths -> Box(modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = KofcNavy)
+                    }
+                    archiveMonths.isEmpty() -> Text("No archived photos yet.", color = Color(0xFF999999))
+                    else -> Column {
+                        archiveMonths.forEach { month ->
+                            TextButton(
+                                onClick = {
+                                    selectedMonth = month
+                                    showMonthPicker = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("${month.label} (${month.count})", modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMonthPicker = false }) { Text("Close") }
+            },
+        )
     }
 
     val enlargedUrl = enlargedPhotoUrl

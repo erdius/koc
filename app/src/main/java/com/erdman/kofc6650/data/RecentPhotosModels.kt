@@ -10,3 +10,10 @@ data class RecentPhotoDto(
     val submittedBy: String? = null,
     val uploadedAt: String? = null,
 )
+
+@JsonClass(generateAdapter = true)
+data class ArchiveMonthDto(
+    val month: String,
+    val label: String,
+    val count: Int,
+)

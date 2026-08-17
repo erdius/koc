@@ -11,7 +11,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
@@ -56,6 +58,12 @@ class KofcRepository {
 
     suspend fun getRecentPhotos(): List<RecentPhotoDto> =
         recentPhotosApi.getRecentPhotos(RECENT_PHOTOS_API_URL)
+
+    suspend fun getPhotoArchiveMonths(): List<ArchiveMonthDto> =
+        recentPhotosApi.getArchiveMonths(PHOTOS_ARCHIVE_API_URL)
+
+    suspend fun getArchivedPhotos(month: String): List<RecentPhotoDto> =
+        recentPhotosApi.getRecentPhotos("$PHOTOS_ARCHIVE_API_URL/$month")
 
     suspend fun uploadPhotos(
         pin: String,
@@ -106,7 +114,13 @@ class KofcRepository {
     }
 
     private suspend fun fetchEvents(): List<EventDto> {
-        val timeMin = OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        // Start of today, not the current moment -- Google's API excludes
+        // events whose end time is before timeMin, so using now() here was
+        // dropping events off the list the instant they ended, hours before
+        // midnight. Starting from midnight keeps today's events visible all
+        // day, matching the client-side date-only filters in MainActivity.kt.
+        val timeMin = LocalDate.now().atStartOfDay(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         val response = api.getEvents(
             calendarId = CALENDAR_ID,
             apiKey = API_KEY,
@@ -151,6 +165,7 @@ class KofcRepository {
         private const val CALENDAR_ID = "3j9ina0035sbq5u2f7s4oafua4@group.calendar.google.com"
         private const val API_KEY = "AIzaSyDMVWRq8ykzhqKCVxiavbEfLLbvaIdahfU"
         private const val RECENT_PHOTOS_API_URL = "https://koc-photos.erdcloud.org/api/photos"
+        private const val PHOTOS_ARCHIVE_API_URL = "https://koc-photos.erdcloud.org/api/photos/archive"
         private const val PHOTOS_UPLOAD_API_URL = "https://koc-photos.erdcloud.org/api/upload"
 
         private val TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
