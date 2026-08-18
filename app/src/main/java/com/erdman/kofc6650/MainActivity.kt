@@ -1254,6 +1254,29 @@ private fun EventCard(
     onSignUpClick: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    var showAddToCalendarConfirm by remember { mutableStateOf(false) }
+
+    if (showAddToCalendarConfirm) {
+        AlertDialog(
+            onDismissRequest = { showAddToCalendarConfirm = false },
+            title = { Text("Add to Calendar") },
+            text = { Text("Add \"${event.title}\" to your calendar?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAddToCalendarConfirm = false
+                    addEventToCalendar(context, event)
+                }) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddToCalendarConfirm = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1312,7 +1335,7 @@ private fun EventCard(
                 }
             }
             OutlinedButton(
-                onClick = { addEventToCalendar(context, event) },
+                onClick = { showAddToCalendarConfirm = true },
                 modifier = Modifier.padding(top = 8.dp),
             ) {
                 Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
