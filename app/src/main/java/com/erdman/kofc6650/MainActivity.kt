@@ -3,6 +3,7 @@ package com.erdman.kofc6650
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.CalendarContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -32,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
@@ -45,6 +47,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
@@ -98,6 +101,7 @@ import com.erdman.kofc6650.data.FontScalePreference
 import com.erdman.kofc6650.data.KofcRepository
 import com.erdman.kofc6650.data.LeadershipContact
 import com.erdman.kofc6650.data.LeadershipDirectory
+import com.erdman.kofc6650.data.OfflineCache
 import com.erdman.kofc6650.data.PhotoUploadFile
 import com.erdman.kofc6650.data.PinManager
 import com.erdman.kofc6650.data.RecentPhotoDto
@@ -106,6 +110,10 @@ import com.erdman.kofc6650.ui.theme.KofcGold
 import com.erdman.kofc6650.ui.theme.KofcGoldMuted
 import com.erdman.kofc6650.ui.theme.KofcNavy
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlinx.coroutines.coroutineScope
@@ -164,14 +172,16 @@ fun KofcApp() {
     var tabIndex by remember { mutableIntStateOf(0) }
     var events by remember { mutableStateOf<List<EventDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var eventsError by remember { mutableStateOf(false) }
+    var eventsError by remember { mutableStateOf<String?>(null) }
     var allEvents by remember { mutableStateOf<List<EventDto>>(emptyList()) }
     var isLoadingAllEvents by remember { mutableStateOf(true) }
-    var allEventsError by remember { mutableStateOf(false) }
+    var allEventsError by remember { mutableStateOf<String?>(null) }
     var photos by remember { mutableStateOf<List<RecentPhotoDto>>(emptyList()) }
     var isLoadingPhotos by remember { mutableStateOf(true) }
-    var photosError by remember { mutableStateOf(false) }
+    var photosError by remember { mutableStateOf<String?>(null) }
+    var hasNewPhotos by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
+    val offlineCache = remember { OfflineCache(context) }
 
     // Refetch whenever the app comes back to the foreground, so events/photos
     // added elsewhere show up without the user having to remember to tap the
@@ -195,20 +205,30 @@ fun KofcApp() {
 
     LaunchedEffect(refreshTrigger) {
         isLoading = true
-        eventsError = false
+        eventsError = null
         isLoadingAllEvents = true
-        allEventsError = false
+        allEventsError = null
         isLoadingPhotos = true
-        photosError = false
+        photosError = null
         coroutineScope {
             launch {
                 try {
                     val bundle = repository.getCouncilEvents()
                     events = bundle.signupEvents
                     allEvents = bundle.allEvents
+                    offlineCache.saveEvents(bundle.signupEvents, bundle.allEvents)
                 } catch (e: Exception) {
-                    eventsError = true
-                    allEventsError = true
+                    val cached = offlineCache.loadEvents()
+                    if (cached != null) {
+                        events = cached.signupEvents
+                        allEvents = cached.allEvents
+                        val message = "Showing saved events from ${offlineCache.relativeEventsSavedAt()} — couldn't reach the server."
+                        eventsError = message
+                        allEventsError = message
+                    } else {
+                        eventsError = "Could not load calendar events."
+                        allEventsError = "Could not load calendar events."
+                    }
                 } finally {
                     isLoading = false
                     isLoadingAllEvents = false
@@ -216,11 +236,20 @@ fun KofcApp() {
             }
             launch {
                 try {
-                    photos = repository.getRecentPhotos()
+                    val fetched = repository.getRecentPhotos()
+                    photos = fetched
+                    offlineCache.savePhotos(fetched)
                 } catch (e: Exception) {
-                    photosError = true
+                    val cached = offlineCache.loadPhotos()
+                    if (cached != null) {
+                        photos = cached
+                        photosError = "Showing saved photos from ${offlineCache.relativePhotosSavedAt()} — couldn't reach the server."
+                    } else {
+                        photosError = "Could not load recent photos."
+                    }
                 } finally {
                     isLoadingPhotos = false
+                    hasNewPhotos = offlineCache.hasNewPhotos(photos)
                 }
             }
         }
@@ -295,8 +324,24 @@ fun KofcApp() {
                     )
                     Tab(
                         selected = tabIndex == 3,
-                        onClick = { tabIndex = 3 },
-                        text = { Text("Recent Photos") },
+                        onClick = {
+                            tabIndex = 3
+                            offlineCache.markPhotosSeen(photos)
+                            hasNewPhotos = false
+                        },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Recent Photos")
+                                if (hasNewPhotos) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(KofcGold, CircleShape),
+                                    )
+                                }
+                            }
+                        },
                     )
                 }
             }
@@ -310,7 +355,7 @@ fun KofcApp() {
             } else if (tabIndex == 0) {
                 CalendarTab(
                     events = events,
-                    isError = eventsError,
+                    errorMessage = eventsError,
                     onSignUpClick = { url ->
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
@@ -322,7 +367,7 @@ fun KofcApp() {
             } else if (tabIndex == 1) {
                 CalendarAgendaTab(
                     events = allEvents,
-                    isError = allEventsError,
+                    errorMessage = allEventsError,
                     onSignUpClick = { url ->
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
@@ -334,7 +379,7 @@ fun KofcApp() {
                     CircularProgressIndicator(color = KofcNavy)
                 }
             } else {
-                RecentPhotosTab(repository = repository, photos = photos, isError = photosError)
+                RecentPhotosTab(repository = repository, photos = photos, errorMessage = photosError)
             }
         }
     }
@@ -660,7 +705,7 @@ private fun CreateSignUpLink(onClick: () -> Unit) {
 @Composable
 private fun CalendarTab(
     events: List<EventDto>,
-    isError: Boolean,
+    errorMessage: String?,
     onSignUpClick: (String) -> Unit,
 ) {
     val today = LocalDate.now()
@@ -689,11 +734,11 @@ private fun CalendarTab(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        if (isError) {
+        if (errorMessage != null) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5))) {
                     Text(
-                        text = "Could not load calendar events.",
+                        text = errorMessage,
                         color = Color(0xFFC0392B),
                         modifier = Modifier.padding(14.dp),
                     )
@@ -702,7 +747,7 @@ private fun CalendarTab(
             }
         }
 
-        if (!isError && upcoming.isEmpty()) {
+        if (errorMessage == null && upcoming.isEmpty()) {
             item {
                 Text(
                     text = "No upcoming events on the calendar.",
@@ -722,7 +767,7 @@ private fun CalendarTab(
 @Composable
 private fun CalendarAgendaTab(
     events: List<EventDto>,
-    isError: Boolean,
+    errorMessage: String?,
     onSignUpClick: (String) -> Unit,
 ) {
     val today = LocalDate.now()
@@ -751,11 +796,11 @@ private fun CalendarAgendaTab(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        if (isError) {
+        if (errorMessage != null) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5))) {
                     Text(
-                        text = "Could not load calendar events.",
+                        text = errorMessage,
                         color = Color(0xFFC0392B),
                         modifier = Modifier.padding(14.dp),
                     )
@@ -764,7 +809,7 @@ private fun CalendarAgendaTab(
             }
         }
 
-        if (!isError && upcoming.isEmpty()) {
+        if (errorMessage == null && upcoming.isEmpty()) {
             item {
                 Text(
                     text = "No upcoming events on the calendar.",
@@ -981,7 +1026,7 @@ private fun PhotosTab(repository: KofcRepository, pinManager: PinManager) {
 private fun RecentPhotosTab(
     repository: KofcRepository,
     photos: List<RecentPhotoDto>,
-    isError: Boolean,
+    errorMessage: String?,
 ) {
     var enlargedPhotoUrl by remember { mutableStateOf<String?>(null) }
 
@@ -1025,7 +1070,11 @@ private fun RecentPhotosTab(
 
     val viewingArchive = selectedMonth != null
     val displayedPhotos = if (viewingArchive) archivePhotos else photos
-    val displayedIsError = if (viewingArchive) archiveError else isError
+    val displayedErrorMessage = if (viewingArchive) {
+        if (archiveError) "Could not load photos for this month." else null
+    } else {
+        errorMessage
+    }
     val displayedIsLoading = viewingArchive && isLoadingArchivePhotos
     val currentMonthTitle = remember {
         val today = LocalDate.now()
@@ -1078,11 +1127,11 @@ private fun RecentPhotosTab(
             }
         }
 
-        if (displayedIsError) {
+        if (displayedErrorMessage != null) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5))) {
                     Text(
-                        text = if (viewingArchive) "Could not load photos for this month." else "Could not load recent photos.",
+                        text = displayedErrorMessage,
                         color = Color(0xFFC0392B),
                         modifier = Modifier.padding(14.dp),
                     )
@@ -1091,7 +1140,7 @@ private fun RecentPhotosTab(
             }
         }
 
-        if (!displayedIsLoading && !displayedIsError && displayedPhotos.isEmpty()) {
+        if (!displayedIsLoading && displayedErrorMessage == null && displayedPhotos.isEmpty()) {
             item {
                 Text(
                     text = if (viewingArchive) "No photos for this month." else "No photos yet.",
@@ -1112,7 +1161,7 @@ private fun RecentPhotosTab(
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { enlargedPhotoUrl = photo.imageUrl },
+                        .clickable { enlargedPhotoUrl = photo.mediumUrl },
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -1204,6 +1253,7 @@ private fun EventCard(
     event: EventDto,
     onSignUpClick: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1261,7 +1311,59 @@ private fun EventCard(
                     Text("Open Link →")
                 }
             }
+            OutlinedButton(
+                onClick = { addEventToCalendar(context, event) },
+                modifier = Modifier.padding(top = 8.dp),
+            ) {
+                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Add to Calendar")
+            }
         }
+    }
+}
+
+// The API only ever gives us a start time (no end), so timed events default
+// to a 1-hour block -- long enough to be useful on the calendar without
+// implying a false precision the source data doesn't actually have.
+private fun addEventToCalendar(context: android.content.Context, event: EventDto) {
+    val date = try {
+        LocalDate.parse(event.date)
+    } catch (e: Exception) {
+        return
+    }
+
+    val intent = Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
+        .putExtra(CalendarContract.Events.TITLE, event.title)
+        .putExtra(CalendarContract.Events.EVENT_LOCATION, event.location ?: "")
+        .putExtra(CalendarContract.Events.DESCRIPTION, event.description ?: "")
+
+    val time = event.time
+    if (time.isNullOrBlank()) {
+        val startMillis = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        intent.putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, true)
+        intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+        intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startMillis)
+    } else {
+        val localTime = try {
+            LocalTime.parse(time, DateTimeFormatter.ofPattern("h:mm a", Locale.US))
+        } catch (e: Exception) {
+            null
+        }
+        val start = if (localTime != null) {
+            LocalDateTime.of(date, localTime)
+        } else {
+            date.atStartOfDay()
+        }
+        val startMillis = start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+        intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startMillis + 60 * 60 * 1000)
+    }
+
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // No calendar app available to handle the intent; nothing to do.
     }
 }
 

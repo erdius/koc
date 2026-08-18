@@ -10,6 +10,10 @@ data class RecentPhotoDto(
     // full-size imageUrl server-side for formats the thumbnailer can't
     // decode (real Apple HEIC), so this is always a valid URL to load.
     val thumbnailUrl: String,
+    // Resized (max 1600px wide) JPEG for the tap-to-enlarge dialog -- sharp
+    // full-screen without needing the multi-MB original. Same HEIC fallback
+    // as thumbnailUrl.
+    val mediumUrl: String,
     val caption: String? = null,
     val submittedBy: String? = null,
     val uploadedAt: String? = null,
