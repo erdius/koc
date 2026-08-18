@@ -52,6 +52,5 @@ object LeadershipDirectory {
         LeadershipContact(name = "Will McGowan", title = "Round Table – MTCC", email = "willmcg@gmail.com"),
         LeadershipContact(name = "Tom Maher", title = "Round Table – STA", email = "tjomar1@gmail.com"),
         LeadershipContact(name = "Paul Kondor", title = "Round Table – STM", email = "pkondor56@gmail.com"),
-        LeadershipContact(name = "Sal Morra", title = "Historian", email = "smorra1702@gmail.com"),
     )
 }

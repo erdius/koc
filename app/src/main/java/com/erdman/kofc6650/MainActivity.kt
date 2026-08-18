@@ -438,7 +438,10 @@ private fun DirectorsOfficersDialog(onDismiss: () -> Unit) {
                         }
                     },
                 )
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 32.dp),
+                ) {
                     leadershipSection(title = "App", contacts = LeadershipDirectory.developer) { email ->
                         context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
                     }
@@ -1024,6 +1027,10 @@ private fun RecentPhotosTab(
     val displayedPhotos = if (viewingArchive) archivePhotos else photos
     val displayedIsError = if (viewingArchive) archiveError else isError
     val displayedIsLoading = viewingArchive && isLoadingArchivePhotos
+    val currentMonthTitle = remember {
+        val today = LocalDate.now()
+        "${today.month.getDisplayName(TextStyle.FULL, Locale.US)} ${today.year}"
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1033,14 +1040,23 @@ private fun RecentPhotosTab(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
-                Text(
-                    text = selectedMonth?.label ?: "Recent Photos",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
+                Column {
+                    Text(
+                        text = "FAITH IN ACTION",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        color = KofcGold,
+                    )
+                    Text(
+                        text = selectedMonth?.label ?: currentMonthTitle,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
                 TextButton(onClick = {
                     if (viewingArchive) {
                         selectedMonth = null
@@ -1091,7 +1107,7 @@ private fun RecentPhotosTab(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) {
                 AsyncImage(
-                    model = photo.imageUrl,
+                    model = photo.thumbnailUrl,
                     contentDescription = null,
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
