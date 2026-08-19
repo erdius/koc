@@ -229,10 +229,11 @@ fun KofcApp(
     val fontScalePref = remember { FontScalePreference(context) }
     val resolvedAppearanceModePref = appearanceModePref
         ?: remember { com.erdman.kofc6650.data.AppearanceModePreference(context) }
-    // Captured before the Text Size override below so the header can opt
-    // back out of it -- the header stays a fixed size regardless of the
-    // user's in-app text scaling preference.
-    val baseDensity = LocalDensity.current
+    // A neutral fontScale (not the true system density) -- the header opts
+    // out of both the in-app Text Size preference AND the device's own
+    // accessibility font size, so it always renders at a fixed size and
+    // never overflows the TopAppBar's fixed-width title slot.
+    val baseDensity = Density(density = LocalDensity.current.density, fontScale = 1f)
     val scaledDensity = Density(
         density = LocalDensity.current.density,
         fontScale = fontScalePref.preset.multiplier,
@@ -376,27 +377,42 @@ fun KofcApp(
                                     Text(
                                         text = "Knights of Columbus",
                                         color = KofcGold,
-                                        fontSize = 16.sp,
+                                        fontSize = 18.sp,
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                     Text(
                                         text = "Council 6650 — Cary & Apex, NC",
                                         color = Color(0xFFAABBCC),
-                                        fontSize = 11.sp,
+                                        fontSize = 12.sp,
                                     )
                                 }
                             }
                         }
                     },
                     actions = {
-                        IconButton(onClick = { showDirectorsOfficers = true }) {
-                            Icon(Icons.Default.Email, contentDescription = "Directors & Officers", tint = KofcGold)
+                        IconButton(onClick = { showDirectorsOfficers = true }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.Email,
+                                contentDescription = "Directors & Officers",
+                                tint = KofcGold,
+                                modifier = Modifier.size(20.dp),
+                            )
                         }
-                        IconButton(onClick = { showAbout = true }) {
-                            Icon(Icons.Default.Info, contentDescription = "About", tint = KofcGold)
+                        IconButton(onClick = { showAbout = true }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = "About",
+                                tint = KofcGold,
+                                modifier = Modifier.size(20.dp),
+                            )
                         }
-                        IconButton(onClick = { refreshTrigger++ }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = KofcGold)
+                        IconButton(onClick = { refreshTrigger++ }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh",
+                                tint = KofcGold,
+                                modifier = Modifier.size(20.dp),
+                            )
                         }
                     },
                 )
