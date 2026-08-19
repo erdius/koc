@@ -22,6 +22,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,6 +57,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -76,6 +78,7 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.Composable
@@ -458,6 +461,11 @@ fun KofcApp(
                             }
                         },
                     )
+                    Tab(
+                        selected = tabIndex == 4,
+                        onClick = { tabIndex = 4 },
+                        text = { Text("Payments") },
+                    )
                 }
             }
         },
@@ -497,11 +505,11 @@ fun KofcApp(
                 )
             } else if (tabIndex == 2) {
                 PhotosTab(repository = repository, pinManager = pinManager)
-            } else if (isLoadingPhotos && photos.isEmpty()) {
+            } else if (tabIndex == 3 && isLoadingPhotos && photos.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = KofcNavy)
                 }
-            } else {
+            } else if (tabIndex == 3) {
                 RecentPhotosTab(
                     repository = repository,
                     photos = photos,
@@ -509,6 +517,8 @@ fun KofcApp(
                     isRefreshing = isLoadingPhotos,
                     onRefresh = { refreshTrigger++ },
                 )
+            } else {
+                PaymentsTab()
             }
         }
     }
@@ -607,6 +617,7 @@ private fun WhatsNewDialog(onDismiss: () -> Unit) {
         },
     )
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1108,6 +1119,309 @@ private fun LazyListScope.eventSections(events: List<EventDto>, onSignUpClick: (
             items(bucketEvents) { event ->
                 EventCard(event = event, onSignUpClick = onSignUpClick)
                 Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PaymentsTab() {
+    val context = LocalContext.current
+    var showDuesPayment by remember { mutableStateOf(false) }
+    var showBadgePayment by remember { mutableStateOf(false) }
+
+    // No option/amount to pick beforehand, so a plain PayPal link works
+    // (unlike dues/badge, which need the in-app page's dropdown first).
+    val donateUrl = "https://www.paypal.com/donate/?cmd=_s-xclick&hosted_button_id=VQ2AXC3TRTC62"
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+    ) {
+        item {
+            Text(
+                text = "Dues & Badge Payments",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "💳 Pick an option below, then check out securely with PayPal",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = KofcGoldMuted,
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = { showDuesPayment = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = KofcNavy, contentColor = KofcGold),
+                    ) {
+                        Text("Pay Membership Dues")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { showBadgePayment = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = KofcNavy, contentColor = KofcGold),
+                    ) {
+                        Text("Pay for a Council Badge")
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "You'll pick your dues category or badge type on the council's payment page, then finish checkout in PayPal.",
+                        fontSize = 13.sp,
+                        color = Color(0xFF555555),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "❤️ Support the LAMB Foundation",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = KofcGoldMuted,
+                    )
+                    Text(
+                        text = "Msgr. Michael A. Carey Council 6650 — assisting those with intellectual disabilities.",
+                        fontSize = 13.sp,
+                        color = Color(0xFF555555),
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                    )
+                    Button(
+                        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(donateUrl))) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = KofcNavy, contentColor = KofcGold),
+                    ) {
+                        Text("Donate")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDuesPayment) {
+        DuesPaymentDialog(onDismiss = { showDuesPayment = false })
+    }
+
+    if (showBadgePayment) {
+        BadgePaymentDialog(onDismiss = { showBadgePayment = false })
+    }
+}
+
+// Submits the council's PayPal hosted-button form ourselves (native
+// picker/fields instead of embedding the council's webpage), then hands
+// the resulting checkout URL off to the system browser -- we never touch
+// payment entry ourselves.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DuesPaymentDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var selectedOption by remember { mutableStateOf("Annual Membership Dues") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val options = listOf(
+        "Annual Membership Dues" to "Annual Membership Dues — \$39.88",
+        "Dues + Penny-a-Day Fund" to "Dues + Penny-a-Day Fund — \$43.66",
+    )
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = { Text("Membership Dues") },
+                    actions = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+                )
+                Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+                    Text("Choose an option", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    options.forEach { (value, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedOption = value }
+                                .padding(vertical = 8.dp),
+                        ) {
+                            RadioButton(selected = selectedOption == value, onClick = { selectedOption = value })
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label)
+                        }
+                    }
+
+                    errorMessage?.let {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(it, color = Color(0xFFA12626))
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            isSubmitting = true
+                            errorMessage = null
+                            scope.launch {
+                                try {
+                                    val url = withContext(Dispatchers.IO) {
+                                        com.erdman.kofc6650.data.PayPalSubmitter.submit(
+                                            hostedButtonId = "WZEZAAQZP7HAU",
+                                            fields = mapOf(
+                                                "on0" to "Select One",
+                                                "os0" to selectedOption,
+                                                "currency_code" to "USD",
+                                            ),
+                                        )
+                                    }
+                                    isSubmitting = false
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                    onDismiss()
+                                } catch (e: Exception) {
+                                    isSubmitting = false
+                                    errorMessage = "Couldn't reach PayPal. Please try again."
+                                }
+                            }
+                        },
+                        enabled = !isSubmitting,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = KofcNavy, contentColor = KofcGold),
+                    ) {
+                        if (isSubmitting) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = KofcGold, strokeWidth = 2.dp)
+                        } else {
+                            Text("Continue to PayPal")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BadgePaymentDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var selectedOption by remember { mutableStateOf("Name Badge Only") }
+    var nameOnBadge by remember { mutableStateOf("") }
+    var officerRole by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val options = listOf(
+        "Name Badge Only" to "Name Badge Only — \$15.00",
+        "Name Badge & Magnet" to "Name Badge & Magnet — \$18.00",
+    )
+    val canSubmit = nameOnBadge.isNotBlank() && !isSubmitting
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = { Text("Council Badge") },
+                    actions = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+                )
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text("Choose an option", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    options.forEach { (value, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedOption = value }
+                                .padding(vertical = 8.dp),
+                        ) {
+                            RadioButton(selected = selectedOption == value, onClick = { selectedOption = value })
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = nameOnBadge,
+                        onValueChange = { nameOnBadge = it },
+                        label = { Text("How name should appear") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = officerRole,
+                        onValueChange = { officerRole = it },
+                        label = { Text("Officer role (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    errorMessage?.let {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(it, color = Color(0xFFA12626))
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            isSubmitting = true
+                            errorMessage = null
+                            scope.launch {
+                                try {
+                                    val url = withContext(Dispatchers.IO) {
+                                        com.erdman.kofc6650.data.PayPalSubmitter.submit(
+                                            hostedButtonId = "EJHU5WCSMXMXQ",
+                                            fields = mapOf(
+                                                "on0" to "Select One",
+                                                "os0" to selectedOption,
+                                                "on1" to "How name should appear",
+                                                "os1" to nameOnBadge,
+                                                "on2" to "Officer role (optional)",
+                                                "os2" to officerRole,
+                                                "currency_code" to "USD",
+                                            ),
+                                        )
+                                    }
+                                    isSubmitting = false
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                    onDismiss()
+                                } catch (e: Exception) {
+                                    isSubmitting = false
+                                    errorMessage = "Couldn't reach PayPal. Please try again."
+                                }
+                            }
+                        },
+                        enabled = canSubmit,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = KofcNavy, contentColor = KofcGold),
+                    ) {
+                        if (isSubmitting) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = KofcGold, strokeWidth = 2.dp)
+                        } else {
+                            Text("Continue to PayPal")
+                        }
+                    }
+                }
             }
         }
     }
