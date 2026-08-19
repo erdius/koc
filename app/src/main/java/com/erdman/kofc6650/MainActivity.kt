@@ -891,7 +891,11 @@ private fun PinGateScreen(pinManager: PinManager, onOpenUrl: (String) -> Unit) {
             withStyle(style = SpanStyle(fontWeight = FontWeight.SemiBold)) {
                 append("BLESSEDMCGIVNEY")
             }
-            append(" for a free one-year membership. We're Council 6650!")
+            append(" for a free one-year membership.\n\n")
+            append(
+                "We're Council 6650, serving St. Michael the Archangel, St. Andrew the Apostle " +
+                    "and Mother Teresa Catholic Churches in Cary and Apex, NC."
+            )
         }
         ClickableText(
             text = signUpText,
