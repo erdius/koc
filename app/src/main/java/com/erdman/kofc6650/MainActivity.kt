@@ -129,6 +129,7 @@ import com.erdman.kofc6650.data.PhotoUploadFile
 import com.erdman.kofc6650.data.PinManager
 import com.erdman.kofc6650.data.RecentPhotoDto
 import com.erdman.kofc6650.data.RsvpStore
+import com.erdman.kofc6650.data.WhatsNew
 import com.erdman.kofc6650.ui.theme.KofC6650Theme
 import com.erdman.kofc6650.ui.theme.KofcGold
 import com.erdman.kofc6650.ui.theme.KofcGoldMuted
@@ -219,6 +220,7 @@ fun KofcApp() {
 
     var showAbout by remember { mutableStateOf(false) }
     var showDirectorsOfficers by remember { mutableStateOf(false) }
+    var showWhatsNew by remember { mutableStateOf(WhatsNew.shouldShow(context)) }
     var tabIndex by remember { mutableIntStateOf(0) }
     var events by remember { mutableStateOf<List<EventDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -457,7 +459,28 @@ fun KofcApp() {
         DirectorsOfficersDialog(onDismiss = { showDirectorsOfficers = false })
     }
 
+    if (showWhatsNew) {
+        WhatsNewDialog(
+            onDismiss = {
+                WhatsNew.markSeen(context)
+                showWhatsNew = false
+            },
+        )
+    }
+
     } // CompositionLocalProvider(LocalDensity)
+}
+
+@Composable
+private fun WhatsNewDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("What's New") },
+        text = { Text(WhatsNew.CHANGELOG) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Got It") }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
