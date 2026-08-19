@@ -1333,14 +1333,39 @@ private fun RecentPhotosTab(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) {
-                AsyncImage(
-                    model = photo.thumbnailUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { enlargedPhotoUrl = photo.mediumUrl },
-                )
+                Column {
+                    AsyncImage(
+                        model = photo.thumbnailUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { enlargedPhotoUrl = photo.mediumUrl },
+                    )
+                    if (!photo.caption.isNullOrEmpty()) {
+                        Text(
+                            text = photo.caption,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                        )
+                    }
+                    if (!photo.submittedBy.isNullOrEmpty()) {
+                        Text(
+                            text = "Submitted by ${photo.submittedBy}",
+                            fontSize = 11.sp,
+                            color = Color(0xFF999999),
+                            modifier = Modifier.padding(
+                                start = 8.dp,
+                                end = 8.dp,
+                                top = if (photo.caption.isNullOrEmpty()) 8.dp else 2.dp,
+                                bottom = 8.dp,
+                            ),
+                        )
+                    } else if (!photo.caption.isNullOrEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
