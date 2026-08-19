@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">KofC 6650</string>
+    <string name="widget_description">Shows the next upcoming council event.</string>
 </resources>

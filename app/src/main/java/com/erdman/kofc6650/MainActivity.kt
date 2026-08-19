@@ -160,6 +160,30 @@ private fun formatDate(dateStr: String): String = try {
     dateStr
 }
 
+// Hands the next upcoming event to the home screen widget -- the widget
+// provider can't reach the network or KofcRepository itself, so this is
+// the only way it learns anything.
+private fun updateNextEventWidget(context: android.content.Context, allEvents: List<EventDto>) {
+    val today = LocalDate.now()
+    val next = allEvents
+        .filter { event ->
+            val date = try { LocalDate.parse(event.date) } catch (e: Exception) { null }
+            date != null && !date.isBefore(today)
+        }
+        .sortedBy { it.date }
+        .firstOrNull()
+    val info = next?.let {
+        com.erdman.kofc6650.data.NextEventInfo(
+            title = it.title,
+            dateDisplay = formatDate(it.date),
+            time = it.time?.takeIf { t -> t.isNotBlank() },
+            location = it.location,
+        )
+    }
+    com.erdman.kofc6650.data.NextEventWidgetData.save(context, info)
+    com.erdman.kofc6650.widget.NextEventWidgetProvider.updateAll(context)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KofcApp() {
@@ -249,6 +273,7 @@ fun KofcApp() {
                 } finally {
                     isLoading = false
                     isLoadingAllEvents = false
+                    updateNextEventWidget(context, allEvents)
                 }
             }
             launch {
