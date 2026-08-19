@@ -15,6 +15,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -93,6 +94,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -227,6 +229,10 @@ fun KofcApp(
     val fontScalePref = remember { FontScalePreference(context) }
     val resolvedAppearanceModePref = appearanceModePref
         ?: remember { com.erdman.kofc6650.data.AppearanceModePreference(context) }
+    // Captured before the Text Size override below so the header can opt
+    // back out of it -- the header stays a fixed size regardless of the
+    // user's in-app text scaling preference.
+    val baseDensity = LocalDensity.current
     val scaledDensity = Density(
         density = LocalDensity.current.density,
         fontScale = fontScalePref.preset.multiplier,
@@ -246,6 +252,7 @@ fun KofcApp(
 
     var showAbout by remember { mutableStateOf(false) }
     var showDirectorsOfficers by remember { mutableStateOf(false) }
+    var showJoinKofc by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(WhatsNew.shouldShow(context)) }
     var tabIndex by remember { mutableIntStateOf(pendingTargetTab.value ?: 0) }
     LaunchedEffect(pendingTargetTab.value) {
@@ -349,28 +356,35 @@ fun KofcApp(
                         titleContentColor = KofcGold,
                     ),
                     title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(KofcGold, CircleShape),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(text = "K", color = KofcNavy, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Knights of Columbus",
-                                    color = KofcGold,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    text = "Council 6650 — Cary & Apex, NC",
-                                    color = Color(0xFFAABBCC),
-                                    fontSize = 11.sp,
-                                )
+                        // Overrides the Text Size preference for this one
+                        // subtree -- the header stays a fixed size no
+                        // matter what the user picks in About.
+                        CompositionLocalProvider(LocalDensity provides baseDensity) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .background(KofcGold, CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(text = "K", color = KofcNavy, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(
+                                    modifier = Modifier.clickable { showJoinKofc = true },
+                                ) {
+                                    Text(
+                                        text = "Knights of Columbus",
+                                        color = KofcGold,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        text = "Council 6650 — Cary & Apex, NC",
+                                        color = Color(0xFFAABBCC),
+                                        fontSize = 11.sp,
+                                    )
+                                }
                             }
                         }
                     },
@@ -496,6 +510,10 @@ fun KofcApp(
         DirectorsOfficersDialog(onDismiss = { showDirectorsOfficers = false })
     }
 
+    if (showJoinKofc) {
+        JoinKofcDialog(onDismiss = { showJoinKofc = false })
+    }
+
     if (showWhatsNew) {
         WhatsNewDialog(
             onDismiss = {
@@ -506,6 +524,60 @@ fun KofcApp(
     }
 
     } // CompositionLocalProvider(LocalDensity)
+}
+
+private const val JOIN_KOFC_URL = "https://www.kofc.org/get-involved/join-kofc"
+private const val JOIN_KOFC_PROMO_CODE = "BLESSEDMCGIVNEY"
+
+@Composable
+private fun JoinKofcDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val qrBitmap = remember { com.erdman.kofc6650.data.QrCodeGenerator.generate(JOIN_KOFC_URL) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Not a member yet?") },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Image(
+                    bitmap = qrBitmap.asImageBitmap(),
+                    contentDescription = "QR code to join Council 6650",
+                    modifier = Modifier
+                        .size(220.dp)
+                        .background(Color.White)
+                        .padding(12.dp),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = JOIN_KOFC_URL,
+                    fontSize = 13.sp,
+                    color = KofcNavy,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.clickable {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(JOIN_KOFC_URL)))
+                    },
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Use code for a free one-year membership:",
+                    fontSize = 13.sp,
+                    color = Color(0xFF999999),
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = JOIN_KOFC_PROMO_CODE,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = KofcGoldMuted,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+    )
 }
 
 @Composable

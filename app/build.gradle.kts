@@ -98,6 +98,9 @@ dependencies {
     // Image loading for the Recent Photos tab
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // QR code generation for the "Join Council 6650" popup
+    implementation("com.google.zxing:core:3.5.3")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
