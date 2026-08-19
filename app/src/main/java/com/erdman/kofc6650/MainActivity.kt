@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -1430,6 +1431,7 @@ private suspend fun savePhotoToGallery(context: android.content.Context, url: St
     ).show()
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun EventCard(
     event: EventDto,
@@ -1491,34 +1493,49 @@ private fun EventCard(
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
-            if (!event.signupUrl.isNullOrBlank()) {
-                Button(
-                    onClick = { onSignUpClick(event.signupUrl) },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = KofcNavy,
-                        contentColor = KofcGold,
-                    ),
-                    modifier = Modifier.padding(top = 10.dp),
-                ) {
-                    Text("Sign Up to Volunteer →")
+            FlowRow(
+                modifier = Modifier.padding(top = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (!event.signupUrl.isNullOrBlank()) {
+                    Button(
+                        onClick = { onSignUpClick(event.signupUrl) },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = KofcNavy,
+                            contentColor = KofcGold,
+                        ),
+                    ) {
+                        Text("Sign Up to Volunteer →")
+                    }
+                } else if (!event.linkUrl.isNullOrBlank()) {
+                    Button(
+                        onClick = { onSignUpClick(event.linkUrl) },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = KofcNavy,
+                            contentColor = KofcGold,
+                        ),
+                    ) {
+                        Text("Open Link →")
+                    }
                 }
-            } else if (!event.linkUrl.isNullOrBlank()) {
-                Button(
-                    onClick = { onSignUpClick(event.linkUrl) },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = KofcNavy,
-                        contentColor = KofcGold,
-                    ),
-                    modifier = Modifier.padding(top = 10.dp),
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(KofcNavy)
+                        .clickable { showAddToCalendarSheet = true }
+                        .padding(10.dp),
                 ) {
-                    Text("Open Link →")
+                    Icon(Icons.Default.DateRange, contentDescription = "Add to My Calendar", tint = KofcGold)
                 }
-            }
-            Row(modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { showAddToCalendarSheet = true }) {
-                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Add to My Calendar")
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(KofcNavy)
+                        .clickable { shareEvent(context, event) }
+                        .padding(10.dp),
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = "Share event", tint = KofcGold)
                 }
             }
         }
@@ -1533,11 +1550,19 @@ private fun EventCard(
             },
             modifier = Modifier.align(Alignment.TopEnd),
         ) {
-            Icon(
-                if (isGoing) Icons.Filled.Star else Icons.Outlined.Star,
-                contentDescription = if (isGoing) "Marked as signed up" else "Mark as signed up",
-                tint = if (isGoing) KofcGold else Color(0xFF999999),
-            )
+            if (isGoing) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = "Marked as signed up",
+                    tint = KofcGold,
+                )
+            } else {
+                Icon(
+                    painterResource(R.drawable.ic_star_outline),
+                    contentDescription = "Mark as signed up",
+                    tint = Color(0xFF999999),
+                )
+            }
         }
         }
     }
@@ -1546,6 +1571,23 @@ private fun EventCard(
 private fun openLocationInMaps(context: android.content.Context, location: String) {
     val uri = Uri.parse("geo:0,0?q=" + Uri.encode(location))
     context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+}
+
+private fun shareEvent(context: android.content.Context, event: EventDto) {
+    val lines = mutableListOf(
+        event.title,
+        "📅 " + formatDate(event.date) + (event.time?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+    )
+    if (!event.location.isNullOrBlank()) {
+        lines.add("📍 " + event.location)
+    }
+    (event.signupUrl ?: event.linkUrl)?.let { lines.add(it) }
+
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, lines.joinToString("\n"))
+    }
+    context.startActivity(Intent.createChooser(intent, "Share Event"))
 }
 
 // Events default to a 1-hour block -- long enough to be useful on the
