@@ -45,6 +45,8 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -117,6 +119,7 @@ import com.erdman.kofc6650.data.OfflineCache
 import com.erdman.kofc6650.data.PhotoUploadFile
 import com.erdman.kofc6650.data.PinManager
 import com.erdman.kofc6650.data.RecentPhotoDto
+import com.erdman.kofc6650.data.RsvpStore
 import com.erdman.kofc6650.ui.theme.KofC6650Theme
 import com.erdman.kofc6650.ui.theme.KofcGold
 import com.erdman.kofc6650.ui.theme.KofcGoldMuted
@@ -134,8 +137,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private const val SIGNUP_GENIUS_URL = "https://www.signupgenius.com/"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -689,33 +690,22 @@ private fun PinGateScreen(pinManager: PinManager, onOpenUrl: (String) -> Unit) {
 }
 
 @Composable
-private fun CreateSignUpLink(onClick: () -> Unit) {
-    val annotatedText = buildAnnotatedString {
-        pushStringAnnotation(tag = "URL", annotation = SIGNUP_GENIUS_URL)
-        withStyle(
-            style = SpanStyle(
-                color = KofcGold,
-                textDecoration = TextDecoration.Underline,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        ) {
-            append("Click here")
-        }
-        pop()
-        append(" to create a new sign-up")
-    }
-    ClickableText(
-        text = annotatedText,
-        style = ComposeTextStyle(
+private fun RsvpLegend() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Filled.Star,
+            contentDescription = null,
+            tint = KofcGoldMuted,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "Tap the star to track events you've signed up for",
             fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onBackground,
-        ),
-        onClick = { offset ->
-            annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                .firstOrNull()
-                ?.let { onClick() }
-        },
-    )
+            fontWeight = FontWeight.SemiBold,
+            color = KofcGoldMuted,
+        )
+    }
 }
 
 @Composable
@@ -746,7 +736,7 @@ private fun CalendarTab(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(8.dp))
-            CreateSignUpLink(onClick = { onSignUpClick(SIGNUP_GENIUS_URL) })
+            RsvpLegend()
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -809,6 +799,8 @@ private fun CalendarAgendaTab(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            RsvpLegend()
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -1364,6 +1356,7 @@ private fun EventCard(
 ) {
     val context = LocalContext.current
     var showAddToCalendarConfirm by remember { mutableStateOf(false) }
+    var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
 
     if (showAddToCalendarConfirm) {
         AlertDialog(
@@ -1390,12 +1383,14 @@ private fun EventCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = event.title,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(end = 28.dp),
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -1443,14 +1438,30 @@ private fun EventCard(
                     Text("Open Link →")
                 }
             }
-            OutlinedButton(
-                onClick = { showAddToCalendarConfirm = true },
-                modifier = Modifier.padding(top = 8.dp),
-            ) {
-                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Add to Calendar")
+            Row(modifier = Modifier.padding(top = 8.dp)) {
+                OutlinedButton(onClick = { showAddToCalendarConfirm = true }) {
+                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Add to Calendar")
+                }
             }
+        }
+
+        // A corner marker, not another action button -- keeps it from
+        // reading as a second "sign up" CTA next to the real one.
+        IconButton(
+            onClick = {
+                isGoing = !isGoing
+                RsvpStore.toggle(context, event.id)
+            },
+            modifier = Modifier.align(Alignment.TopEnd),
+        ) {
+            Icon(
+                if (isGoing) Icons.Filled.Star else Icons.Outlined.Star,
+                contentDescription = if (isGoing) "Marked as signed up" else "Mark as signed up",
+                tint = if (isGoing) KofcGold else Color(0xFF999999),
+            )
+        }
         }
     }
 }
