@@ -17,6 +17,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -160,9 +161,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pendingTargetTab.value = intent?.getStringExtra("target_tab")?.toIntOrNull()
         setContent {
-            KofC6650Theme {
+            val appearanceModePref = remember { com.erdman.kofc6650.data.AppearanceModePreference(this) }
+            val darkTheme = when (appearanceModePref.mode) {
+                com.erdman.kofc6650.data.AppearanceModePreference.Mode.SYSTEM -> isSystemInDarkTheme()
+                com.erdman.kofc6650.data.AppearanceModePreference.Mode.LIGHT -> false
+                com.erdman.kofc6650.data.AppearanceModePreference.Mode.DARK -> true
+            }
+            KofC6650Theme(darkTheme = darkTheme) {
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    KofcApp(pendingTargetTab = pendingTargetTab)
+                    KofcApp(pendingTargetTab = pendingTargetTab, appearanceModePref = appearanceModePref)
                 }
             }
         }
@@ -210,11 +217,16 @@ private fun updateNextEventWidget(context: android.content.Context, allEvents: L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KofcApp(pendingTargetTab: MutableState<Int?> = remember { mutableStateOf(null) }) {
+fun KofcApp(
+    pendingTargetTab: MutableState<Int?> = remember { mutableStateOf(null) },
+    appearanceModePref: com.erdman.kofc6650.data.AppearanceModePreference? = null,
+) {
     val repository = remember { KofcRepository() }
     val context = LocalContext.current
     val pinManager = remember { PinManager(context) }
     val fontScalePref = remember { FontScalePreference(context) }
+    val resolvedAppearanceModePref = appearanceModePref
+        ?: remember { com.erdman.kofc6650.data.AppearanceModePreference(context) }
     val scaledDensity = Density(
         density = LocalDensity.current.density,
         fontScale = fontScalePref.preset.multiplier,
@@ -472,7 +484,12 @@ fun KofcApp(pendingTargetTab: MutableState<Int?> = remember { mutableStateOf(nul
     }
 
     if (showAbout) {
-        AboutDialog(pinManager = pinManager, fontScalePref = fontScalePref, onDismiss = { showAbout = false })
+        AboutDialog(
+            pinManager = pinManager,
+            fontScalePref = fontScalePref,
+            appearanceModePref = resolvedAppearanceModePref,
+            onDismiss = { showAbout = false },
+        )
     }
 
     if (showDirectorsOfficers) {
@@ -505,7 +522,12 @@ private fun WhatsNewDialog(onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AboutDialog(pinManager: PinManager, fontScalePref: FontScalePreference, onDismiss: () -> Unit) {
+private fun AboutDialog(
+    pinManager: PinManager,
+    fontScalePref: FontScalePreference,
+    appearanceModePref: com.erdman.kofc6650.data.AppearanceModePreference,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -545,6 +567,24 @@ private fun AboutDialog(pinManager: PinManager, fontScalePref: FontScalePreferen
                             icon = {},
                         ) {
                             Text(preset.label, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Appearance", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow {
+                    com.erdman.kofc6650.data.AppearanceModePreference.Mode.entries.forEachIndexed { index, mode ->
+                        SegmentedButton(
+                            selected = appearanceModePref.mode == mode,
+                            onClick = { appearanceModePref.choose(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = com.erdman.kofc6650.data.AppearanceModePreference.Mode.entries.size,
+                            ),
+                            icon = {},
+                        ) {
+                            Text(mode.label, fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 }
