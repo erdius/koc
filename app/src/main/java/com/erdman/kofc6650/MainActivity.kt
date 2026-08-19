@@ -838,10 +838,7 @@ private fun CalendarTab(
             }
         }
 
-        items(upcoming) { event ->
-            EventCard(event = event, onSignUpClick = onSignUpClick)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
+        eventSections(upcoming, onSignUpClick)
     }
 }
 
@@ -901,9 +898,40 @@ private fun CalendarAgendaTab(
             }
         }
 
-        items(upcoming) { event ->
-            EventCard(event = event, onSignUpClick = onSignUpClick)
-            Spacer(modifier = Modifier.height(12.dp))
+        eventSections(upcoming, onSignUpClick)
+    }
+}
+
+// Groups events into Today / This Week / Later sections so a longer list
+// is easier to scan at a glance instead of one flat chronological list.
+private fun dateBucket(dateStr: String): String {
+    val date = try { LocalDate.parse(dateStr) } catch (e: Exception) { return "Later" }
+    val days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), date)
+    return when {
+        days == 0L -> "Today"
+        days in 1..6 -> "This Week"
+        else -> "Later"
+    }
+}
+
+private fun LazyListScope.eventSections(events: List<EventDto>, onSignUpClick: (String) -> Unit) {
+    for (bucketName in listOf("Today", "This Week", "Later")) {
+        val bucketEvents = events.filter { dateBucket(it.date) == bucketName }.sortedBy { it.date }
+        if (bucketEvents.isNotEmpty()) {
+            item {
+                Text(
+                    text = bucketName.uppercase(),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    color = KofcGold,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                )
+            }
+            items(bucketEvents) { event ->
+                EventCard(event = event, onSignUpClick = onSignUpClick)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
         }
     }
 }
