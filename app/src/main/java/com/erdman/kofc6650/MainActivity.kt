@@ -506,6 +506,7 @@ private fun WhatsNewDialog(onDismiss: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AboutDialog(pinManager: PinManager, fontScalePref: FontScalePreference, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("About") },
@@ -546,6 +547,10 @@ private fun AboutDialog(pinManager: PinManager, fontScalePref: FontScalePreferen
                             Text(preset.label, fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
                     }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(onClick = { reportProblem(context) }) {
+                    Text("Report a Problem")
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
@@ -595,9 +600,6 @@ private fun DirectorsOfficersDialog(onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 32.dp),
                 ) {
-                    leadershipSection(title = "App", contacts = LeadershipDirectory.developer) { email ->
-                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
-                    }
                     leadershipSection(title = "Officers", contacts = LeadershipDirectory.officers) { email ->
                         context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
                     }
@@ -1672,6 +1674,26 @@ private fun EventCard(
             }
         }
         }
+    }
+}
+
+private fun reportProblem(context: android.content.Context) {
+    val body = """
+
+
+        ---
+        Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})
+        Android ${Build.VERSION.RELEASE}
+        ${Build.MANUFACTURER} ${Build.MODEL}
+    """.trimIndent()
+    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:bird.dog@erdius.net")).apply {
+        putExtra(Intent.EXTRA_SUBJECT, "KofC 6650 App - Problem Report")
+        putExtra(Intent.EXTRA_TEXT, body)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // No email app available to handle the intent; nothing to do.
     }
 }
 
