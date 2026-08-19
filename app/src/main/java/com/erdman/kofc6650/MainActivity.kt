@@ -1215,6 +1215,11 @@ private fun RecentPhotosTab(
                     Text(if (viewingArchive) "Back to Recent" else "Browse Past Months")
                 }
             }
+            Text(
+                text = "Tap a photo to save or share it",
+                fontSize = 13.sp,
+                color = Color(0xFF999999),
+            )
             Spacer(modifier = Modifier.height(16.dp))
         }
 
