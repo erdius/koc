@@ -90,7 +90,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.Lifecycle
@@ -1434,6 +1436,7 @@ private fun EventCard(
     onSignUpClick: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     var showAddToCalendarSheet by remember { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
 
@@ -1441,6 +1444,7 @@ private fun EventCard(
         AddToCalendarTimeDialog(
             event = event,
             onAdd = { hour, minute ->
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 showAddToCalendarSheet = false
                 addEventToCalendar(context, event, hour, minute)
             },
@@ -1523,6 +1527,7 @@ private fun EventCard(
         // reading as a second "sign up" CTA next to the real one.
         IconButton(
             onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 isGoing = !isGoing
                 RsvpStore.toggle(context, event.id)
             },
