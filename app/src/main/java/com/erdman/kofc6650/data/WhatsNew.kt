@@ -10,6 +10,10 @@ import android.content.Context
 object WhatsNew {
     const val VERSION = "1.0.13"
     const val CHANGELOG = "• Long-press the app icon for quick access to Recent Photos and Submit Photos\n" +
+        "• Photo captions and submitter names now show in Recent Photos\n" +
+        "• Report a Problem from About sends feedback straight to us\n" +
+        "• Choose System, Light, or Dark mode in About\n" +
+        "• Tap the header for a QR code to join Council 6650\n" +
         "• You'll now see a short \"What's New\" summary like this one after updates"
 
     private const val PREFS_NAME = "whats_new"
