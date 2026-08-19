@@ -36,6 +36,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -390,7 +394,11 @@ fun KofcApp() {
         },
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            if (isLoading && tabIndex == 0) {
+            // Only block the whole screen on the very first load of each
+            // tab's data -- once there's something to show, a refresh
+            // (pull-to-refresh or tab resume) should keep the list visible
+            // with its own pull indicator instead of blanking the screen.
+            if (isLoading && events.isEmpty() && tabIndex == 0) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = KofcNavy)
                 }
@@ -398,11 +406,13 @@ fun KofcApp() {
                 CalendarTab(
                     events = events,
                     errorMessage = eventsError,
+                    isRefreshing = isLoading,
+                    onRefresh = { refreshTrigger++ },
                     onSignUpClick = { url ->
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
                 )
-            } else if (tabIndex == 1 && isLoadingAllEvents) {
+            } else if (tabIndex == 1 && isLoadingAllEvents && allEvents.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = KofcNavy)
                 }
@@ -410,18 +420,26 @@ fun KofcApp() {
                 CalendarAgendaTab(
                     events = allEvents,
                     errorMessage = allEventsError,
+                    isRefreshing = isLoadingAllEvents,
+                    onRefresh = { refreshTrigger++ },
                     onSignUpClick = { url ->
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
                 )
             } else if (tabIndex == 2) {
                 PhotosTab(repository = repository, pinManager = pinManager)
-            } else if (isLoadingPhotos) {
+            } else if (isLoadingPhotos && photos.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = KofcNavy)
                 }
             } else {
-                RecentPhotosTab(repository = repository, photos = photos, errorMessage = photosError)
+                RecentPhotosTab(
+                    repository = repository,
+                    photos = photos,
+                    errorMessage = photosError,
+                    isRefreshing = isLoadingPhotos,
+                    onRefresh = { refreshTrigger++ },
+                )
             }
         }
     }
@@ -714,6 +732,34 @@ private fun PinGateScreen(pinManager: PinManager, onOpenUrl: (String) -> Unit) {
     }
 }
 
+// Material3's PullToRefreshBox needs a newer material3 than this project
+// pins (1.2.1), but the older @ExperimentalMaterialApi pullRefresh API is
+// already on the classpath transitively -- no new dependency needed.
+@OptIn(ExperimentalMaterialApi::class)
+@Composable
+private fun RefreshableList(
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+    content: LazyListScope.() -> Unit,
+) {
+    val pullRefreshState = rememberPullRefreshState(refreshing = isRefreshing, onRefresh = onRefresh)
+    Box(modifier = Modifier.fillMaxSize().pullRefresh(pullRefreshState)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+            content = content,
+        )
+        PullRefreshIndicator(
+            refreshing = isRefreshing,
+            state = pullRefreshState,
+            modifier = Modifier.align(Alignment.TopCenter),
+            backgroundColor = Color.White,
+            contentColor = KofcNavy,
+        )
+    }
+}
+
 @Composable
 private fun RsvpLegend() {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -737,6 +783,8 @@ private fun RsvpLegend() {
 private fun CalendarTab(
     events: List<EventDto>,
     errorMessage: String?,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     onSignUpClick: (String) -> Unit,
 ) {
     val today = LocalDate.now()
@@ -749,10 +797,7 @@ private fun CalendarTab(
         date != null && !date.isBefore(today)
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-    ) {
+    RefreshableList(isRefreshing = isRefreshing, onRefresh = onRefresh) {
         item {
             Text(
                 text = "Sign ups for Upcoming Volunteer Opportunities",
@@ -799,6 +844,8 @@ private fun CalendarTab(
 private fun CalendarAgendaTab(
     events: List<EventDto>,
     errorMessage: String?,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     onSignUpClick: (String) -> Unit,
 ) {
     val today = LocalDate.now()
@@ -813,10 +860,7 @@ private fun CalendarAgendaTab(
         }
         .sortedBy { it.date }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-    ) {
+    RefreshableList(isRefreshing = isRefreshing, onRefresh = onRefresh) {
         item {
             Text(
                 text = "Upcoming Events",
@@ -1060,6 +1104,8 @@ private fun RecentPhotosTab(
     repository: KofcRepository,
     photos: List<RecentPhotoDto>,
     errorMessage: String?,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
 ) {
     var enlargedPhotoUrl by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -1131,8 +1177,9 @@ private fun RecentPhotosTab(
         "${today.month.getDisplayName(TextStyle.FULL, Locale.US)} ${today.year}"
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+    RefreshableList(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 32.dp),
     ) {
         item {
@@ -1429,7 +1476,10 @@ private fun EventCard(
                     text = "📍 " + event.location,
                     fontSize = 13.sp,
                     color = Color(0xFF666666),
-                    modifier = Modifier.padding(top = 2.dp),
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .clickable { openLocationInMaps(context, event.location) },
                 )
             }
             if (!event.description.isNullOrBlank()) {
@@ -1489,6 +1539,11 @@ private fun EventCard(
         }
         }
     }
+}
+
+private fun openLocationInMaps(context: android.content.Context, location: String) {
+    val uri = Uri.parse("geo:0,0?q=" + Uri.encode(location))
+    context.startActivity(Intent(Intent.ACTION_VIEW, uri))
 }
 
 // The API only ever gives us a start time (no end), so timed events default
