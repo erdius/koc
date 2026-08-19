@@ -68,6 +68,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SegmentedButton
@@ -1427,27 +1429,17 @@ private fun EventCard(
     onSignUpClick: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    var showAddToCalendarConfirm by remember { mutableStateOf(false) }
+    var showAddToCalendarSheet by remember { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
 
-    if (showAddToCalendarConfirm) {
-        AlertDialog(
-            onDismissRequest = { showAddToCalendarConfirm = false },
-            title = { Text("Add to Calendar") },
-            text = { Text("Add \"${event.title}\" to your calendar?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showAddToCalendarConfirm = false
-                    addEventToCalendar(context, event)
-                }) {
-                    Text("Add")
-                }
+    if (showAddToCalendarSheet) {
+        AddToCalendarTimeDialog(
+            event = event,
+            onAdd = { hour, minute ->
+                showAddToCalendarSheet = false
+                addEventToCalendar(context, event, hour, minute)
             },
-            dismissButton = {
-                TextButton(onClick = { showAddToCalendarConfirm = false }) {
-                    Text("Cancel")
-                }
-            },
+            onCancel = { showAddToCalendarSheet = false },
         )
     }
 
@@ -1514,7 +1506,7 @@ private fun EventCard(
                 }
             }
             Row(modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { showAddToCalendarConfirm = true }) {
+                OutlinedButton(onClick = { showAddToCalendarSheet = true }) {
                     Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Add to Calendar")
@@ -1546,47 +1538,83 @@ private fun openLocationInMaps(context: android.content.Context, location: Strin
     context.startActivity(Intent(Intent.ACTION_VIEW, uri))
 }
 
-// The API only ever gives us a start time (no end), so timed events default
-// to a 1-hour block -- long enough to be useful on the calendar without
-// implying a false precision the source data doesn't actually have.
-private fun addEventToCalendar(context: android.content.Context, event: EventDto) {
+// Events default to a 1-hour block -- long enough to be useful on the
+// calendar without implying a false precision the source data doesn't
+// actually have.
+private fun addEventToCalendar(context: android.content.Context, event: EventDto, hour: Int, minute: Int) {
     val date = try {
         LocalDate.parse(event.date)
     } catch (e: Exception) {
         return
     }
 
+    val start = LocalDateTime.of(date, LocalTime.of(hour, minute))
+    val startMillis = start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
     val intent = Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
         .putExtra(CalendarContract.Events.TITLE, event.title)
         .putExtra(CalendarContract.Events.EVENT_LOCATION, event.location ?: "")
         .putExtra(CalendarContract.Events.DESCRIPTION, event.description ?: "")
-
-    val time = event.time
-    if (time.isNullOrBlank()) {
-        val startMillis = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        intent.putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, true)
-        intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
-        intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startMillis)
-    } else {
-        val localTime = try {
-            LocalTime.parse(time, DateTimeFormatter.ofPattern("h:mm a", Locale.US))
-        } catch (e: Exception) {
-            null
-        }
-        val start = if (localTime != null) {
-            LocalDateTime.of(date, localTime)
-        } else {
-            date.atStartOfDay()
-        }
-        val startMillis = start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
-        intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startMillis + 60 * 60 * 1000)
-    }
+        .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+        .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startMillis + 60 * 60 * 1000)
 
     try {
         context.startActivity(intent)
     } catch (e: Exception) {
         // No calendar app available to handle the intent; nothing to do.
     }
+}
+
+// SignUpGenius events often offer several time slots (setup, serving,
+// cleanup) that the source calendar data has no way to represent -- it
+// only ever carries one time. Rather than guess, this asks which slot the
+// user actually signed up for before launching the calendar insert intent.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddToCalendarTimeDialog(
+    event: EventDto,
+    onAdd: (hour: Int, minute: Int) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val defaultTime = remember(event.id) {
+        event.time?.takeIf { it.isNotBlank() }?.let {
+            try {
+                LocalTime.parse(it, DateTimeFormatter.ofPattern("h:mm a", Locale.US))
+            } catch (e: Exception) {
+                null
+            }
+        } ?: LocalTime.of(9, 0)
+    }
+    val timePickerState = rememberTimePickerState(
+        initialHour = defaultTime.hour,
+        initialMinute = defaultTime.minute,
+        is24Hour = false,
+    )
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Add to Calendar") },
+        text = {
+            Column {
+                Text(
+                    "If you signed up for a specific time slot, set it here so it's added to your calendar correctly.",
+                    fontSize = 13.sp,
+                    color = Color(0xFF666666),
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                TimePicker(state = timePickerState)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAdd(timePickerState.hour, timePickerState.minute) }) {
+                Text("Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
