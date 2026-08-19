@@ -1,9 +1,16 @@
 package com.erdman.kofc6650
 
+import android.content.ContentValues
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.CalendarContract
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -37,6 +44,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -83,6 +91,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -94,7 +103,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.erdman.kofc6650.data.ArchiveMonthDto
 import com.erdman.kofc6650.data.EventDto
 import com.erdman.kofc6650.data.FontScalePreference
@@ -116,8 +128,12 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val SIGNUP_GENIUS_URL = "https://www.signupgenius.com/"
 
@@ -1029,6 +1045,23 @@ private fun RecentPhotosTab(
     errorMessage: String?,
 ) {
     var enlargedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // Saving via MediaStore.Images requires this permission on API < 29
+    // (Q introduced scoped storage, where it's not needed); the pending
+    // save runs once the user grants it.
+    var pendingSaveUrl by remember { mutableStateOf<String?>(null) }
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val url = pendingSaveUrl
+        pendingSaveUrl = null
+        if (granted && url != null) {
+            scope.launch { savePhotoToGallery(context, url) }
+        } else if (!granted) {
+            Toast.makeText(context, "Storage permission is needed to save photos.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Archive browsing: null selectedMonth means "current month" (the
     // photos/isError passed in from KofcApp's own refresh cycle). Picking a
@@ -1235,17 +1268,93 @@ private fun RecentPhotosTab(
                         ),
                 )
 
-                IconButton(
-                    onClick = { enlargedPhotoUrl = null },
+                Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(8.dp),
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    IconButton(onClick = { sharePhoto(context, scope, enlargedUrl) }) {
+                        Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
+                    }
+                    IconButton(
+                        onClick = {
+                            val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                            if (needsPermission) {
+                                pendingSaveUrl = enlargedUrl
+                                storagePermissionLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            } else {
+                                scope.launch { savePhotoToGallery(context, enlargedUrl) }
+                            }
+                        },
+                    ) {
+                        Icon(painterResource(R.drawable.ic_save), contentDescription = "Save to gallery", tint = Color.White)
+                    }
+                    IconButton(onClick = { enlargedPhotoUrl = null }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    }
                 }
             }
         }
     }
+}
+
+private suspend fun loadBitmap(context: android.content.Context, url: String): Bitmap? {
+    val loader = ImageLoader(context)
+    val request = ImageRequest.Builder(context).data(url).allowHardware(false).build()
+    val result = (loader.execute(request).drawable as? BitmapDrawable)?.bitmap
+    return result
+}
+
+private fun sharePhoto(context: android.content.Context, scope: kotlinx.coroutines.CoroutineScope, url: String) {
+    scope.launch {
+        val bitmap = loadBitmap(context, url) ?: run {
+            Toast.makeText(context, "Couldn't load this photo.", Toast.LENGTH_SHORT).show()
+            return@launch
+        }
+        val uri = withContext(Dispatchers.IO) {
+            val dir = File(context.cacheDir, "shared_images").apply { mkdirs() }
+            val file = File(dir, "photo_${System.currentTimeMillis()}.jpg")
+            FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out) }
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/jpeg"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share Photo"))
+    }
+}
+
+private suspend fun savePhotoToGallery(context: android.content.Context, url: String) {
+    val bitmap = loadBitmap(context, url) ?: run {
+        Toast.makeText(context, "Couldn't load this photo.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val saved = withContext(Dispatchers.IO) {
+        try {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "koc6650_${System.currentTimeMillis()}.jpg")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/KofC6650")
+                }
+            }
+            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: return@withContext false
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+    Toast.makeText(
+        context,
+        if (saved) "Photo saved to gallery." else "Couldn't save this photo.",
+        Toast.LENGTH_SHORT,
+    ).show()
 }
 
 @Composable
