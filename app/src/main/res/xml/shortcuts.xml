@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="recent_photos"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_recent_photos"
+        android:shortcutLongLabel="@string/shortcut_recent_photos">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.erdman.kofc6650"
+            android:targetClass="com.erdman.kofc6650.MainActivity">
+            <extra android:name="target_tab" android:value="3" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="submit_photos"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_submit_photos"
+        android:shortcutLongLabel="@string/shortcut_submit_photos">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.erdman.kofc6650"
+            android:targetClass="com.erdman.kofc6650.MainActivity">
+            <extra android:name="target_tab" android:value="2" />
+        </intent>
+    </shortcut>
+</shortcuts>

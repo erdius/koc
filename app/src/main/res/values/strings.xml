@@ -1,4 +1,6 @@
 <resources>
     <string name="app_name">KofC 6650</string>
     <string name="widget_description">Shows the next upcoming council event.</string>
+    <string name="shortcut_recent_photos">Recent Photos</string>
+    <string name="shortcut_submit_photos">Submit Photos</string>
 </resources>

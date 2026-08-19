@@ -80,6 +80,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -149,15 +150,28 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    // Home screen shortcuts route here via an Intent extra rather than a
+    // deep link, since the tabs aren't separate screens/destinations --
+    // just an index into the same KofcApp's TabRow. Held at the Activity
+    // level (not inside KofcApp's state) so onNewIntent can update it too.
+    private val pendingTargetTab = mutableStateOf<Int?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingTargetTab.value = intent?.getStringExtra("target_tab")?.toIntOrNull()
         setContent {
             KofC6650Theme {
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    KofcApp()
+                    KofcApp(pendingTargetTab = pendingTargetTab)
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingTargetTab.value = intent.getStringExtra("target_tab")?.toIntOrNull()
     }
 }
 
@@ -196,7 +210,7 @@ private fun updateNextEventWidget(context: android.content.Context, allEvents: L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KofcApp() {
+fun KofcApp(pendingTargetTab: MutableState<Int?> = remember { mutableStateOf(null) }) {
     val repository = remember { KofcRepository() }
     val context = LocalContext.current
     val pinManager = remember { PinManager(context) }
@@ -221,7 +235,13 @@ fun KofcApp() {
     var showAbout by remember { mutableStateOf(false) }
     var showDirectorsOfficers by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(WhatsNew.shouldShow(context)) }
-    var tabIndex by remember { mutableIntStateOf(0) }
+    var tabIndex by remember { mutableIntStateOf(pendingTargetTab.value ?: 0) }
+    LaunchedEffect(pendingTargetTab.value) {
+        pendingTargetTab.value?.let {
+            tabIndex = it
+            pendingTargetTab.value = null
+        }
+    }
     var events by remember { mutableStateOf<List<EventDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var eventsError by remember { mutableStateOf<String?>(null) }
