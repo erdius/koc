@@ -1521,6 +1521,17 @@ private fun EventCard(
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
+            // Feed the Homeless reuses one signup link across every
+            // occurrence, so it always opens whatever sheet is currently
+            // live rather than the date shown here.
+            if (event.title == "Feed the Homeless") {
+                Text(
+                    text = "⚠️ This event uses a recurring signup link that doesn't change. Please make sure the signup sheet matches this date before signing up.",
+                    fontSize = 12.sp,
+                    color = Color(0xFF666666),
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
             FlowRow(
                 modifier = Modifier.padding(top = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

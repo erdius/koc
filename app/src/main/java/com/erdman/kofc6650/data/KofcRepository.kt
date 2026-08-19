@@ -178,13 +178,20 @@ class KofcRepository {
 
         private fun extractSignupUrl(text: String?): String? {
             if (text.isNullOrBlank()) return null
-            return SIGNUP_URL_REGEX.find(text)?.value
+            return SIGNUP_URL_REGEX.find(text)?.value?.let(::unescapeHtmlEntities)
         }
 
         private fun extractGenericUrl(text: String?): String? {
             if (text.isNullOrBlank()) return null
-            return BARE_URL_REGEX.find(text)?.value?.trimEnd('.', ',', ')', ']')
+            return BARE_URL_REGEX.find(text)?.value?.trimEnd('.', ',', ')', ']')?.let(::unescapeHtmlEntities)
         }
+
+        // URLs are extracted from the raw (still-HTML) description, which
+        // encodes multi-param query strings as "...&amp;startdate=..." --
+        // opening that literally sends "amp;startdate" as the param name,
+        // silently breaking any link with more than one query parameter.
+        private fun unescapeHtmlEntities(text: String): String =
+            text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
 
         private fun cleanDescription(text: String?): String {
             if (text.isNullOrBlank()) return ""
