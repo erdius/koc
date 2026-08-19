@@ -1509,7 +1509,7 @@ private fun EventCard(
                 OutlinedButton(onClick = { showAddToCalendarSheet = true }) {
                     Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Add to Calendar")
+                    Text("Add to My Calendar")
                 }
             }
         }
@@ -1593,7 +1593,7 @@ private fun AddToCalendarTimeDialog(
 
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("Add to Calendar") },
+        title = { Text("Add to My Calendar") },
         text = {
             Column {
                 Text(
