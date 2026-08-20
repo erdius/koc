@@ -17,6 +17,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -25,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,7 +41,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
@@ -51,6 +55,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -103,12 +109,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -141,9 +149,11 @@ import com.erdman.kofc6650.ui.theme.KofC6650Theme
 import com.erdman.kofc6650.ui.theme.KofcGold
 import com.erdman.kofc6650.ui.theme.KofcGoldMuted
 import com.erdman.kofc6650.ui.theme.KofcNavy
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -934,6 +944,7 @@ private fun RefreshableList(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     contentPadding: PaddingValues = PaddingValues(16.dp),
+    listState: LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit,
 ) {
     val pullRefreshState = rememberPullRefreshState(refreshing = isRefreshing, onRefresh = onRefresh)
@@ -941,6 +952,7 @@ private fun RefreshableList(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
+            state = listState,
             content = content,
         )
         PullRefreshIndicator(
@@ -955,7 +967,11 @@ private fun RefreshableList(
 
 @Composable
 private fun RsvpLegend() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(
             Icons.Filled.Star,
             contentDescription = null,
@@ -964,11 +980,212 @@ private fun RsvpLegend() {
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = "Tap the star to track events you've signed up for",
+            text = "Tap the star to track your events",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = KofcGoldMuted,
         )
+    }
+}
+
+// A slim, full-width pill toggle (matching the iOS segmented control's
+// compact look) rather than Material3's default SegmentedButton, which
+// can't be shrunk below its built-in min height/padding.
+@Composable
+private fun CalendarViewModeToggle(pref: com.erdman.kofc6650.data.CalendarViewModePreference) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(2.dp),
+    ) {
+        com.erdman.kofc6650.data.CalendarViewModePreference.Mode.entries.forEach { mode ->
+            val selected = pref.mode == mode
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
+                    .clickable { pref.choose(mode) }
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = mode.label,
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+// A month grid with a dot under any date that has an event, plus the
+// selected date's events listed below (reusing EventCard so an individual
+// event looks identical to the agenda view). `events` should already be
+// filtered to today-or-later, same as the agenda tabs -- the backend only
+// ever returns upcoming events, so browsing to an earlier month than the
+// current one would just show an empty grid, hence the disabled "back"
+// button when already on the current month. Rendered as plain (non-lazy)
+// content since it's always called from inside a LazyColumn item {} --
+// nesting a LazyVerticalGrid there would fight the outer scroll.
+private fun LazyListScope.monthCalendarContent(events: List<EventDto>, onSignUpClick: (String) -> Unit, headerHeight: Dp) {
+    item {
+        var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
+        var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+        val isCurrentMonth = displayedMonth == YearMonth.now()
+        val eventDates = remember(events) { events.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }.toSet() }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    IconButton(
+                        onClick = { displayedMonth = displayedMonth.minusMonths(1) },
+                        enabled = !isCurrentMonth,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = "Previous month",
+                            tint = if (isCurrentMonth) Color(0xFFCCCCCC) else KofcNavy,
+                        )
+                    }
+                    Text(
+                        text = displayedMonth.month.getDisplayName(TextStyle.FULL, Locale.US) + " " + displayedMonth.year,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center,
+                    )
+                    IconButton(onClick = { displayedMonth = displayedMonth.plusMonths(1) }) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next month", tint = KofcNavy)
+                    }
+                    TextButton(onClick = {
+                        displayedMonth = YearMonth.now()
+                        selectedDate = LocalDate.now()
+                    }) {
+                        Text("Today", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = KofcNavy)
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    for (d in listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")) {
+                        Text(
+                            text = d,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = KofcGoldMuted,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                val firstOfMonth = displayedMonth.atDay(1)
+                // DayOfWeek.SUNDAY.value == 7; this maps Sunday to a leading
+                // offset of 0 instead of 6 so the grid starts on Sunday.
+                val leadingBlanks = firstOfMonth.dayOfWeek.value % 7
+                val daysInMonth = displayedMonth.lengthOfMonth()
+                val totalCells = ((leadingBlanks + daysInMonth + 6) / 7) * 7
+
+                for (week in 0 until totalCells / 7) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        for (col in 0 until 7) {
+                            val cellIndex = week * 7 + col
+                            val dayNumber = cellIndex - leadingBlanks + 1
+                            Box(
+                                modifier = Modifier.weight(1f).height(44.dp).padding(1.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (dayNumber in 1..daysInMonth) {
+                                    val date = displayedMonth.atDay(dayNumber)
+                                    val isSelected = date == selectedDate
+                                    val isToday = date == LocalDate.now()
+                                    val hasEvent = eventDates.contains(date)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) KofcGold else Color.Transparent)
+                                            .then(
+                                                if (isToday && !isSelected) {
+                                                    Modifier.border(1.5.dp, KofcGold, RoundedCornerShape(8.dp))
+                                                } else Modifier
+                                            )
+                                            .clickable { selectedDate = date },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(
+                                                text = dayNumber.toString(),
+                                                fontSize = 14.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) KofcNavy else MaterialTheme.colorScheme.onBackground,
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .background(
+                                                        if (hasEvent) (if (isSelected) KofcNavy else KofcGold) else Color.Transparent,
+                                                        CircleShape,
+                                                    ),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = formatDate(selectedDate.toString()),
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val selectedDayEvents = events
+            .filter { runCatching { LocalDate.parse(it.date) }.getOrNull() == selectedDate }
+            .sortedBy { it.time ?: "" }
+        if (selectedDayEvents.isEmpty()) {
+            Text(
+                text = "No events this day.",
+                color = Color(0xFF999999),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                textAlign = TextAlign.Center,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                selectedDayEvents.forEach { event ->
+                    EventCard(event = event, onSignUpClick = onSignUpClick)
+                }
+            }
+        }
+    }
+
+    // Guarantees just enough scrollable room for the auto-scroll-to-grid
+    // effect to fully push the header out of view even when the selected
+    // day's event list is short (e.g. "No events this day.") -- without
+    // this, LazyColumn clamps the scroll to the actual content height and
+    // the header sticks around partially visible. Sized to the header's own
+    // measured height (the exact amount of extra scroll room needed) rather
+    // than a full screen, so there's no dead space to keep scrolling past.
+    item {
+        Spacer(modifier = Modifier.height(headerHeight))
     }
 }
 
@@ -980,6 +1197,8 @@ private fun CalendarTab(
     onRefresh: () -> Unit,
     onSignUpClick: (String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
     val today = LocalDate.now()
     val upcoming = events.filter { event ->
         val date = try {
@@ -990,17 +1209,37 @@ private fun CalendarTab(
         date != null && !date.isBefore(today)
     }
 
-    RefreshableList(isRefreshing = isRefreshing, onRefresh = onRefresh) {
+    val isMonthMode = viewModePref.mode == com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
+    val listState = rememberLazyListState()
+    val gridItemIndex = if (errorMessage != null) 2 else 1
+    val density = LocalDensity.current
+    var headerHeightPx by remember { mutableIntStateOf(0) }
+    val headerHeight = with(density) { headerHeightPx.toDp() }
+    LaunchedEffect(isMonthMode, errorMessage != null, headerHeightPx) {
+        if (isMonthMode) {
+            listState.animateScrollToItem(gridItemIndex)
+        }
+    }
+
+    RefreshableList(isRefreshing = isRefreshing, onRefresh = onRefresh, listState = listState) {
         item {
-            Text(
-                text = "Sign ups for Upcoming Volunteer Opportunities",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            RsvpLegend()
-            Spacer(modifier = Modifier.height(16.dp))
+            Column(modifier = Modifier.onGloballyPositioned { headerHeightPx = it.size.height }) {
+                CompositionLocalProvider(LocalDensity provides Density(density = LocalDensity.current.density, fontScale = 1f)) {
+                    Text(
+                        text = "Volunteer Opportunities",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                CalendarViewModeToggle(viewModePref)
+                Spacer(modifier = Modifier.height(8.dp))
+                RsvpLegend()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
 
         if (errorMessage != null) {
@@ -1016,17 +1255,21 @@ private fun CalendarTab(
             }
         }
 
-        if (errorMessage == null && upcoming.isEmpty()) {
-            item {
-                Text(
-                    text = "No upcoming events on the calendar.",
-                    color = Color(0xFF999999),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                )
+        if (isMonthMode) {
+            monthCalendarContent(upcoming, onSignUpClick, headerHeight)
+        } else {
+            if (errorMessage == null && upcoming.isEmpty()) {
+                item {
+                    Text(
+                        text = "No upcoming events on the calendar.",
+                        color = Color(0xFF999999),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                    )
+                }
             }
-        }
 
-        eventSections(upcoming, onSignUpClick)
+            eventSections(upcoming, onSignUpClick)
+        }
     }
 }
 
@@ -1038,6 +1281,8 @@ private fun CalendarAgendaTab(
     onRefresh: () -> Unit,
     onSignUpClick: (String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
     val today = LocalDate.now()
     val upcoming = events
         .filter { event ->
@@ -1050,17 +1295,37 @@ private fun CalendarAgendaTab(
         }
         .sortedBy { it.date }
 
-    RefreshableList(isRefreshing = isRefreshing, onRefresh = onRefresh) {
+    val isMonthMode = viewModePref.mode == com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
+    val listState = rememberLazyListState()
+    val gridItemIndex = if (errorMessage != null) 2 else 1
+    val density = LocalDensity.current
+    var headerHeightPx by remember { mutableIntStateOf(0) }
+    val headerHeight = with(density) { headerHeightPx.toDp() }
+    LaunchedEffect(isMonthMode, errorMessage != null, headerHeightPx) {
+        if (isMonthMode) {
+            listState.animateScrollToItem(gridItemIndex)
+        }
+    }
+
+    RefreshableList(isRefreshing = isRefreshing, onRefresh = onRefresh, listState = listState) {
         item {
-            Text(
-                text = "Upcoming Events",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            RsvpLegend()
-            Spacer(modifier = Modifier.height(16.dp))
+            Column(modifier = Modifier.onGloballyPositioned { headerHeightPx = it.size.height }) {
+                CompositionLocalProvider(LocalDensity provides Density(density = LocalDensity.current.density, fontScale = 1f)) {
+                    Text(
+                        text = "Upcoming Events",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                CalendarViewModeToggle(viewModePref)
+                Spacer(modifier = Modifier.height(8.dp))
+                RsvpLegend()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
 
         if (errorMessage != null) {
@@ -1076,17 +1341,21 @@ private fun CalendarAgendaTab(
             }
         }
 
-        if (errorMessage == null && upcoming.isEmpty()) {
-            item {
-                Text(
-                    text = "No upcoming events on the calendar.",
-                    color = Color(0xFF999999),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                )
+        if (isMonthMode) {
+            monthCalendarContent(upcoming, onSignUpClick, headerHeight)
+        } else {
+            if (errorMessage == null && upcoming.isEmpty()) {
+                item {
+                    Text(
+                        text = "No upcoming events on the calendar.",
+                        color = Color(0xFF999999),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                    )
+                }
             }
-        }
 
-        eventSections(upcoming, onSignUpClick)
+            eventSections(upcoming, onSignUpClick)
+        }
     }
 }
 
@@ -1448,12 +1717,14 @@ private fun PhotosTab(repository: KofcRepository, pinManager: PinManager) {
         contentPadding = PaddingValues(16.dp),
     ) {
         item {
-            Text(
-                text = "Share Your Event Photos",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
+            CompositionLocalProvider(LocalDensity provides Density(density = LocalDensity.current.density, fontScale = 1f)) {
+                Text(
+                    text = "Share Your Event Photos",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(
