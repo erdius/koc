@@ -8,14 +8,9 @@ import android.content.Context
  * app launches after updating to that version.
  */
 object WhatsNew {
-    const val VERSION = "1.0.14"
-    const val CHANGELOG = "• Long-press the app icon for quick access to Recent Photos and Submit Photos\n" +
-        "• Photo captions and submitter names now show in Recent Photos\n" +
-        "• Report a Problem from About sends feedback straight to us\n" +
-        "• Choose System, Light, or Dark mode in About\n" +
-        "• Tap the header for a QR code to join Council 6650\n" +
-        "• New Payments tab: pay membership dues, pay for a council badge, or donate to the LAMB Foundation right in the app\n" +
-        "• You'll now see a short \"What's New\" summary like this one after updates"
+    const val VERSION = "1.0.15"
+    const val CHANGELOG = "• New Month view for the Sign Ups and Calendar tabs — toggle between Agenda and Month to browse events on a calendar grid\n" +
+        "• Updated contact info on the Directors & Officers page"
 
     private const val PREFS_NAME = "whats_new"
     private const val KEY_LAST_SEEN = "last_seen_version"

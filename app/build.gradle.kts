@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     kotlin("android")
+    id("com.github.triplet.play")
 }
 
 val keystoreProperties = Properties().apply {
@@ -18,8 +19,8 @@ android {
         applicationId = "com.erdman.kofc6650"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.0.14"
+        versionCode = 17
+        versionName = "1.0.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -109,4 +110,10 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+play {
+    serviceAccountCredentials.set(file(System.getProperty("user.home") + "/.config/gcloud-service-accounts/kofc6650-play-publisher.json"))
+    defaultToAppBundles = true
+    track.set("alpha")
 }
