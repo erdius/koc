@@ -309,6 +309,14 @@ fun KofcApp(
     }
 
     LaunchedEffect(refreshTrigger) {
+        if (com.erdman.kofc6650.data.ScreenshotMode.isActive(context)) {
+            events = com.erdman.kofc6650.data.ScreenshotMode.sampleSignupEvents
+            allEvents = com.erdman.kofc6650.data.ScreenshotMode.sampleAllEvents
+            isLoading = false
+            isLoadingAllEvents = false
+            isLoadingPhotos = false
+            return@LaunchedEffect
+        }
         isLoading = true
         eventsError = null
         isLoadingAllEvents = true
@@ -2037,56 +2045,78 @@ private fun RecentPhotosTab(
             }
         }
 
-        if (!displayedIsLoading && displayedErrorMessage == null && displayedPhotos.isEmpty()) {
+        if (com.erdman.kofc6650.data.ScreenshotMode.isActive(context) && !viewingArchive) {
             item {
-                Text(
-                    text = if (viewingArchive) "No photos for this month." else "No photos yet.",
-                    color = Color(0xFF999999),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                )
-            }
-        }
-
-        items(displayedPhotos) { photo ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            ) {
-                Column {
-                    AsyncImage(
-                        model = photo.thumbnailUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { enlargedPhotoUrl = photo.mediumUrl },
-                    )
-                    if (!photo.caption.isNullOrEmpty()) {
-                        Text(
-                            text = photo.caption,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
-                        )
-                    }
-                    if (!photo.submittedBy.isNullOrEmpty()) {
-                        Text(
-                            text = "Submitted by ${photo.submittedBy}",
-                            fontSize = 11.sp,
-                            color = Color(0xFF999999),
-                            modifier = Modifier.padding(
-                                start = 8.dp,
-                                end = 8.dp,
-                                top = if (photo.caption.isNullOrEmpty()) 8.dp else 2.dp,
-                                bottom = 8.dp,
-                            ),
-                        )
-                    } else if (!photo.caption.isNullOrEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth().height(340.dp),
+                    colors = CardDefaults.cardColors(containerColor = KofcNavy),
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "📷", fontSize = 40.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Sample Event Photo",
+                                color = KofcGold,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp,
+                            )
+                        }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
+        } else {
+            if (!displayedIsLoading && displayedErrorMessage == null && displayedPhotos.isEmpty()) {
+                item {
+                    Text(
+                        text = if (viewingArchive) "No photos for this month." else "No photos yet.",
+                        color = Color(0xFF999999),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                    )
+                }
+            }
+
+            items(displayedPhotos) { photo ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                ) {
+                    Column {
+                        AsyncImage(
+                            model = photo.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { enlargedPhotoUrl = photo.mediumUrl },
+                        )
+                        if (!photo.caption.isNullOrEmpty()) {
+                            Text(
+                                text = photo.caption,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                            )
+                        }
+                        if (!photo.submittedBy.isNullOrEmpty()) {
+                            Text(
+                                text = "Submitted by ${photo.submittedBy}",
+                                fontSize = 11.sp,
+                                color = Color(0xFF999999),
+                                modifier = Modifier.padding(
+                                    start = 8.dp,
+                                    end = 8.dp,
+                                    top = if (photo.caption.isNullOrEmpty()) 8.dp else 2.dp,
+                                    bottom = 8.dp,
+                                ),
+                            )
+                        } else if (!photo.caption.isNullOrEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
         }
     }
 
