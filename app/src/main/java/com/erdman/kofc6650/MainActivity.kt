@@ -1032,13 +1032,14 @@ private fun CalendarViewModeToggle(pref: com.erdman.kofc6650.data.CalendarViewMo
 
 // A month grid with a dot under any date that has an event, plus the
 // selected date's events listed below (reusing EventCard so an individual
-// event looks identical to the agenda view). `events` should already be
-// filtered to today-or-later, same as the agenda tabs -- the backend only
-// ever returns upcoming events, so browsing to an earlier month than the
-// current one would just show an empty grid, hence the disabled "back"
-// button when already on the current month. Rendered as plain (non-lazy)
-// content since it's always called from inside a LazyColumn item {} --
-// nesting a LazyVerticalGrid there would fight the outer scroll.
+// event looks identical to the agenda view). `events` covers today-or-later
+// plus the last 14 days for the Calendar tab's month view (see
+// CalendarAgendaTab's monthViewEvents), or today-or-later only for the Sign
+// Ups tab -- either way, browsing further back than that just shows an
+// empty grid, hence the disabled "back" button when already on the current
+// month. Rendered as plain (non-lazy) content since it's always called from
+// inside a LazyColumn item {} -- nesting a LazyVerticalGrid there would
+// fight the outer scroll.
 private fun LazyListScope.monthCalendarContent(events: List<EventDto>, onSignUpClick: (String) -> Unit, headerHeight: Dp) {
     item {
         var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
@@ -1080,7 +1081,7 @@ private fun LazyListScope.monthCalendarContent(events: List<EventDto>, onSignUpC
                         displayedMonth = YearMonth.now()
                         selectedDate = LocalDate.now()
                     }) {
-                        Text("Today", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = KofcNavy)
+                        Text("Today", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
 
@@ -1302,6 +1303,19 @@ private fun CalendarAgendaTab(
             date != null && !date.isBefore(today)
         }
         .sortedBy { it.date }
+    // The month grid also keeps the last 2 weeks of past events for
+    // context (unlike the list view above, which stays today-or-later
+    // only) -- selecting a recent past date still shows what happened.
+    val monthViewEvents = events
+        .filter { event ->
+            val date = try {
+                LocalDate.parse(event.date)
+            } catch (e: Exception) {
+                null
+            }
+            date != null && !date.isBefore(today.minusDays(14))
+        }
+        .sortedBy { it.date }
 
     val isMonthMode = viewModePref.mode == com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
     val listState = rememberLazyListState()
@@ -1350,7 +1364,7 @@ private fun CalendarAgendaTab(
         }
 
         if (isMonthMode) {
-            monthCalendarContent(upcoming, onSignUpClick, headerHeight)
+            monthCalendarContent(monthViewEvents, onSignUpClick, headerHeight)
         } else {
             if (errorMessage == null && upcoming.isEmpty()) {
                 item {

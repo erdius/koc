@@ -114,12 +114,11 @@ class KofcRepository {
     }
 
     private suspend fun fetchEvents(): List<EventDto> {
-        // Start of today, not the current moment -- Google's API excludes
-        // events whose end time is before timeMin, so using now() here was
-        // dropping events off the list the instant they ended, hours before
-        // midnight. Starting from midnight keeps today's events visible all
-        // day, matching the client-side date-only filters in MainActivity.kt.
-        val timeMin = LocalDate.now().atStartOfDay(ZoneId.systemDefault())
+        // Start of 14 days ago, not today -- the month view keeps showing
+        // the last 2 weeks of past events for context, so the fetch has to
+        // reach back that far even though the Sign Ups/Calendar list views
+        // still filter down to today-or-later themselves in MainActivity.kt.
+        val timeMin = LocalDate.now().minusDays(14).atStartOfDay(ZoneId.systemDefault())
             .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         val response = api.getEvents(
             calendarId = CALENDAR_ID,
