@@ -1277,7 +1277,11 @@ private fun CalendarTab(
                 }
             }
 
-            eventSections(upcoming, onSignUpClick)
+            // Unlike `upcoming` above (month view, empty-state check), the
+            // agenda list also surfaces a trailing "Past 2 weeks" section --
+            // `events` is already fetched no further back than that, so it
+            // can be passed straight through.
+            eventSections(events, onSignUpClick)
         }
     }
 }
@@ -1381,12 +1385,16 @@ private fun CalendarAgendaTab(
     }
 }
 
-// Groups events into Today / This Week / Later sections so a longer list
-// is easier to scan at a glance instead of one flat chronological list.
+// Groups events into Today / This Week / Later / Past 2 weeks sections so
+// a longer list is easier to scan at a glance instead of one flat
+// chronological list. Only the Sign Ups tab's agenda feeds this a past
+// event, but the Calendar tab's list stays today-or-later, so "Past 2
+// weeks" simply never has anything in it there.
 private fun dateBucket(dateStr: String): String {
     val date = try { LocalDate.parse(dateStr) } catch (e: Exception) { return "Later" }
     val days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), date)
     return when {
+        days < 0L -> "Past 2 weeks"
         days == 0L -> "Today"
         days in 1..6 -> "This Week"
         else -> "Later"
@@ -1394,7 +1402,7 @@ private fun dateBucket(dateStr: String): String {
 }
 
 private fun LazyListScope.eventSections(events: List<EventDto>, onSignUpClick: (String) -> Unit) {
-    for (bucketName in listOf("Today", "This Week", "Later")) {
+    for (bucketName in listOf("Today", "This Week", "Later", "Past 2 weeks")) {
         val bucketEvents = events.filter { dateBucket(it.date) == bucketName }.sortedBy { it.date }
         if (bucketEvents.isNotEmpty()) {
             item {
