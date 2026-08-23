@@ -1033,13 +1033,11 @@ private fun CalendarViewModeToggle(pref: com.erdman.kofc6650.data.CalendarViewMo
 // A month grid with a dot under any date that has an event, plus the
 // selected date's events listed below (reusing EventCard so an individual
 // event looks identical to the agenda view). `events` covers today-or-later
-// plus the last 14 days for the Calendar tab's month view (see
-// CalendarAgendaTab's monthViewEvents), or today-or-later only for the Sign
-// Ups tab -- either way, browsing further back than that just shows an
-// empty grid, hence the disabled "back" button when already on the current
-// month. Rendered as plain (non-lazy) content since it's always called from
-// inside a LazyColumn item {} -- nesting a LazyVerticalGrid there would
-// fight the outer scroll.
+// plus the last 14 days on both tabs' month views -- browsing further back
+// than that just shows an empty grid, hence the disabled "back" button when
+// already on the current month. Rendered as plain (non-lazy) content since
+// it's always called from inside a LazyColumn item {} -- nesting a
+// LazyVerticalGrid there would fight the outer scroll.
 private fun LazyListScope.monthCalendarContent(events: List<EventDto>, onSignUpClick: (String) -> Unit, headerHeight: Dp) {
     item {
         var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
@@ -1265,7 +1263,11 @@ private fun CalendarTab(
         }
 
         if (isMonthMode) {
-            monthCalendarContent(upcoming, onSignUpClick, headerHeight)
+            // Both the month grid and the agenda list's trailing "Past 2
+            // weeks" section (below) want the last 14 days too -- `events`
+            // is already fetched no further back than that, so it can be
+            // passed straight through instead of `upcoming`.
+            monthCalendarContent(events, onSignUpClick, headerHeight)
         } else {
             if (errorMessage == null && upcoming.isEmpty()) {
                 item {
@@ -1277,10 +1279,6 @@ private fun CalendarTab(
                 }
             }
 
-            // Unlike `upcoming` above (month view, empty-state check), the
-            // agenda list also surfaces a trailing "Past 2 weeks" section --
-            // `events` is already fetched no further back than that, so it
-            // can be passed straight through.
             eventSections(events, onSignUpClick)
         }
     }
