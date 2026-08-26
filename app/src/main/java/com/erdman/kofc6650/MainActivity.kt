@@ -2702,11 +2702,18 @@ private fun EventCard(
                     // what the card already says), so that one's disabled. Full
                     // stays enabled -- with the roster now shown in the dialog,
                     // tapping through is still useful even once signups are
-                    // closed off, just to see who's going.
-                    val notOpenYet = feedTheHomelessStatus != null && !isFeedTheHomelessOpenForThisDate
+                    // closed off, just to see who's going. Before the status
+                    // fetch resolves at all (null), the button used to default
+                    // to the enabled "Sign Up" look and then flip to disabled a
+                    // second later once the fetch landed -- a visible flicker.
+                    // Treating "still unknown" the same as "not open" avoids
+                    // ever showing a button that looks tappable-and-open before
+                    // that's actually confirmed.
+                    val notReady = feedTheHomelessStatus == null
+                    val notOpenYet = !notReady && !isFeedTheHomelessOpenForThisDate
                     Button(
                         onClick = { showFeedTheHomelessSheet = true },
-                        enabled = !notOpenYet,
+                        enabled = !notReady && !notOpenYet,
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                             containerColor = KofcNavy,
                             contentColor = KofcGold,
@@ -2714,6 +2721,7 @@ private fun EventCard(
                     ) {
                         Text(
                             when {
+                                notReady -> "Checking Status…"
                                 notOpenYet -> "Not Open Yet"
                                 isFeedTheHomelessFull -> "View Signups"
                                 else -> "Sign Up to Volunteer →"
