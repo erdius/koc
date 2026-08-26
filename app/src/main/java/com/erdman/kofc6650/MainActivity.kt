@@ -1843,6 +1843,29 @@ private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
                                 modifier = Modifier.padding(top = 2.dp),
                             )
                             Spacer(modifier = Modifier.height(12.dp))
+
+                            val roster = currentStatus.slots.filter { !it.name.isNullOrBlank() }
+                            if (roster.isNotEmpty()) {
+                                Text(
+                                    "Signed up",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp,
+                                    color = KofcGoldMuted,
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    roster.forEach { slot ->
+                                        Text(
+                                            slot.name!! + (if (slot.label == "Alternate") "  ·  Alternate" else ""),
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+
                             if (full) {
                                 Text(
                                     "All spots are filled for this date. Thank you to everyone who signed up!",
@@ -2557,6 +2580,14 @@ private fun EventCard(
     var showFeedTheHomelessSheet by remember { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
 
+    // Only the one date the backend currently has open gets a status --
+    // every other Feed the Homeless occurrence (future months not opened
+    // yet) falls through to "not open"; a still-loading/failed fetch
+    // (null) is left ambiguous rather than guessed at.
+    val isFeedTheHomelessOpenForThisDate = feedTheHomelessStatus?.open == true && feedTheHomelessStatus.date == event.date
+    val isFeedTheHomelessFull = isFeedTheHomelessOpenForThisDate &&
+        feedTheHomelessStatus!!.filledCount >= feedTheHomelessStatus.totalCount
+
     if (showAddToCalendarSheet) {
         AddToCalendarTimeDialog(
             event = event,
@@ -2613,13 +2644,7 @@ private fun EventCard(
                 )
             }
             if (event.title == "Feed the Homeless") {
-                // Only the one date the backend currently has open gets a
-                // status -- every other Feed the Homeless occurrence (future
-                // months not opened yet) falls through to "Not open yet",
-                // and a still-loading/failed fetch (null) shows nothing
-                // rather than guessing.
-                val isOpenForThisDate = feedTheHomelessStatus?.open == true && feedTheHomelessStatus.date == event.date
-                if (isOpenForThisDate) {
+                if (isFeedTheHomelessOpenForThisDate) {
                     val filled = feedTheHomelessStatus!!.filledCount
                     val total = feedTheHomelessStatus.totalCount
                     Row(
@@ -2673,14 +2698,27 @@ private fun EventCard(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (event.title == "Feed the Homeless") {
+                    // Not-open-yet is a dead end (the dialog would just repeat
+                    // what the card already says), so that one's disabled. Full
+                    // stays enabled -- with the roster now shown in the dialog,
+                    // tapping through is still useful even once signups are
+                    // closed off, just to see who's going.
+                    val notOpenYet = feedTheHomelessStatus != null && !isFeedTheHomelessOpenForThisDate
                     Button(
                         onClick = { showFeedTheHomelessSheet = true },
+                        enabled = !notOpenYet,
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                             containerColor = KofcNavy,
                             contentColor = KofcGold,
                         ),
                     ) {
-                        Text("Sign Up to Volunteer →")
+                        Text(
+                            when {
+                                notOpenYet -> "Not Open Yet"
+                                isFeedTheHomelessFull -> "View Signups"
+                                else -> "Sign Up to Volunteer →"
+                            },
+                        )
                     }
                 } else if (!event.signupUrl.isNullOrBlank()) {
                     Button(
