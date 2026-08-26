@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -288,6 +289,7 @@ fun KofcApp(
     var isLoadingPhotos by remember { mutableStateOf(true) }
     var photosError by remember { mutableStateOf<String?>(null) }
     var hasNewPhotos by remember { mutableStateOf(false) }
+    var feedTheHomelessStatus by remember { mutableStateOf<SignupStatusDto?>(null) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val offlineCache = remember { OfflineCache(context) }
 
@@ -367,6 +369,19 @@ fun KofcApp(
                 } finally {
                     isLoadingPhotos = false
                     hasNewPhotos = offlineCache.hasNewPhotos(photos)
+                }
+            }
+            launch {
+                // Feeds the "Open · N of 6 filled" badge shown on the Feed
+                // the Homeless event card. No offline cache -- this is a
+                // live, fast-changing count, not worth showing stale; a
+                // failed fetch just leaves the card's status badge absent
+                // rather than blocking anything (the signup dialog itself
+                // still fetches its own fresh copy when opened).
+                feedTheHomelessStatus = try {
+                    repository.getFeedTheHomelessStatus()
+                } catch (e: Exception) {
+                    null
                 }
             }
         }
@@ -509,6 +524,7 @@ fun KofcApp(
                     onSignUpClick = { url ->
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
+                    feedTheHomelessStatus = feedTheHomelessStatus,
                 )
             } else if (tabIndex == 1 && isLoadingAllEvents && allEvents.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -523,6 +539,7 @@ fun KofcApp(
                     onSignUpClick = { url ->
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
+                    feedTheHomelessStatus = feedTheHomelessStatus,
                 )
             } else if (tabIndex == 2) {
                 PhotosTab(repository = repository, pinManager = pinManager)
@@ -1041,7 +1058,12 @@ private fun CalendarViewModeToggle(pref: com.erdman.kofc6650.data.CalendarViewMo
 // already on the current month. Rendered as plain (non-lazy) content since
 // it's always called from inside a LazyColumn item {} -- nesting a
 // LazyVerticalGrid there would fight the outer scroll.
-private fun LazyListScope.monthCalendarContent(events: List<EventDto>, onSignUpClick: (String) -> Unit, headerHeight: Dp) {
+private fun LazyListScope.monthCalendarContent(
+    events: List<EventDto>,
+    onSignUpClick: (String) -> Unit,
+    headerHeight: Dp,
+    feedTheHomelessStatus: SignupStatusDto?,
+) {
     item {
         var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
         var selectedDate by remember { mutableStateOf(LocalDate.now()) }
@@ -1181,7 +1203,7 @@ private fun LazyListScope.monthCalendarContent(events: List<EventDto>, onSignUpC
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 selectedDayEvents.forEach { event ->
-                    EventCard(event = event, onSignUpClick = onSignUpClick)
+                    EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessStatus = feedTheHomelessStatus)
                 }
             }
         }
@@ -1206,6 +1228,7 @@ private fun CalendarTab(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onSignUpClick: (String) -> Unit,
+    feedTheHomelessStatus: SignupStatusDto?,
 ) {
     val context = LocalContext.current
     val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
@@ -1270,7 +1293,7 @@ private fun CalendarTab(
             // weeks" section (below) want the last 14 days too -- `events`
             // is already fetched no further back than that, so it can be
             // passed straight through instead of `upcoming`.
-            monthCalendarContent(events, onSignUpClick, headerHeight)
+            monthCalendarContent(events, onSignUpClick, headerHeight, feedTheHomelessStatus)
         } else {
             if (errorMessage == null && upcoming.isEmpty()) {
                 item {
@@ -1282,7 +1305,7 @@ private fun CalendarTab(
                 }
             }
 
-            eventSections(events, onSignUpClick)
+            eventSections(events, onSignUpClick, feedTheHomelessStatus)
         }
     }
 }
@@ -1294,6 +1317,7 @@ private fun CalendarAgendaTab(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onSignUpClick: (String) -> Unit,
+    feedTheHomelessStatus: SignupStatusDto?,
 ) {
     val context = LocalContext.current
     val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
@@ -1369,7 +1393,7 @@ private fun CalendarAgendaTab(
         }
 
         if (isMonthMode) {
-            monthCalendarContent(monthViewEvents, onSignUpClick, headerHeight)
+            monthCalendarContent(monthViewEvents, onSignUpClick, headerHeight, feedTheHomelessStatus)
         } else {
             if (errorMessage == null && upcoming.isEmpty()) {
                 item {
@@ -1381,7 +1405,7 @@ private fun CalendarAgendaTab(
                 }
             }
 
-            eventSections(upcoming, onSignUpClick)
+            eventSections(upcoming, onSignUpClick, feedTheHomelessStatus)
         }
     }
 }
@@ -1402,7 +1426,11 @@ private fun dateBucket(dateStr: String): String {
     }
 }
 
-private fun LazyListScope.eventSections(events: List<EventDto>, onSignUpClick: (String) -> Unit) {
+private fun LazyListScope.eventSections(
+    events: List<EventDto>,
+    onSignUpClick: (String) -> Unit,
+    feedTheHomelessStatus: SignupStatusDto?,
+) {
     for (bucketName in listOf("Today", "This Week", "Later", "Past 2 weeks")) {
         val bucketEvents = events.filter { dateBucket(it.date) == bucketName }.sortedBy { it.date }
         if (bucketEvents.isNotEmpty()) {
@@ -1417,7 +1445,7 @@ private fun LazyListScope.eventSections(events: List<EventDto>, onSignUpClick: (
                 )
             }
             items(bucketEvents) { event ->
-                EventCard(event = event, onSignUpClick = onSignUpClick)
+                EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessStatus = feedTheHomelessStatus)
                 Spacer(modifier = Modifier.height(12.dp))
             }
         }
@@ -2521,6 +2549,7 @@ private suspend fun savePhotoToGallery(context: android.content.Context, url: St
 private fun EventCard(
     event: EventDto,
     onSignUpClick: (String) -> Unit,
+    feedTheHomelessStatus: SignupStatusDto? = null,
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -2582,6 +2611,61 @@ private fun EventCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
+            }
+            if (event.title == "Feed the Homeless") {
+                // Only the one date the backend currently has open gets a
+                // status -- every other Feed the Homeless occurrence (future
+                // months not opened yet) falls through to "Not open yet",
+                // and a still-loading/failed fetch (null) shows nothing
+                // rather than guessing.
+                val isOpenForThisDate = feedTheHomelessStatus?.open == true && feedTheHomelessStatus.date == event.date
+                if (isOpenForThisDate) {
+                    val filled = feedTheHomelessStatus!!.filledCount
+                    val total = feedTheHomelessStatus.totalCount
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Box(modifier = Modifier.size(8.dp).background(Color(0xFF3A7D5C), CircleShape))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Open · $filled of $total spots filled",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF3A7D5C),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(5.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(if (total > 0) filled.toFloat() / total else 0f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color(0xFF3A7D5C)),
+                        )
+                    }
+                } else if (feedTheHomelessStatus != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Box(modifier = Modifier.size(8.dp).background(Color(0xFF999999), CircleShape))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Not open yet",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF999999),
+                        )
+                    }
+                }
             }
             FlowRow(
                 modifier = Modifier.padding(top = 10.dp),
