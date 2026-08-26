@@ -55,6 +55,7 @@ class KofcRepository {
 
     private val api = retrofit.create(GoogleCalendarApi::class.java)
     private val recentPhotosApi = retrofit.create(RecentPhotosApi::class.java)
+    private val signupApi = retrofit.create(SignupApi::class.java)
 
     suspend fun getRecentPhotos(): List<RecentPhotoDto> =
         recentPhotosApi.getRecentPhotos(RECENT_PHOTOS_API_URL)
@@ -64,6 +65,20 @@ class KofcRepository {
 
     suspend fun getArchivedPhotos(month: String): List<RecentPhotoDto> =
         recentPhotosApi.getRecentPhotos("$PHOTOS_ARCHIVE_API_URL/$month")
+
+    suspend fun getFeedTheHomelessStatus(): SignupStatusDto =
+        signupApi.getStatus(SIGNUP_API_URL)
+
+    suspend fun claimFeedTheHomelessSlot(name: String, email: String, whatsapp: String, asAlternate: Boolean) {
+        try {
+            signupApi.claim(SIGNUP_API_URL, ClaimSlotRequest(name = name, email = email, whatsapp = whatsapp, asAlternate = asAlternate))
+        } catch (e: Exception) {
+            // Apps Script's POST response redirect is occasionally unreliable
+            // to read back directly; the action itself still lands
+            // server-side, so callers always re-fetch getFeedTheHomelessStatus()
+            // afterward rather than trust this call to succeed or throw.
+        }
+    }
 
     suspend fun uploadPhotos(
         pin: String,
@@ -166,6 +181,7 @@ class KofcRepository {
         private const val RECENT_PHOTOS_API_URL = "https://koc-photos.erdcloud.org/api/photos"
         private const val PHOTOS_ARCHIVE_API_URL = "https://koc-photos.erdcloud.org/api/photos/archive"
         private const val PHOTOS_UPLOAD_API_URL = "https://koc-photos.erdcloud.org/api/upload"
+        private const val SIGNUP_API_URL = "https://script.google.com/macros/s/AKfycbynrbC2qHqgjItUpxvFKabHXSawnglZYRvQQymVKstZRd4T6mt-fM1eCfcgAylJClMZ/exec"
 
         private val TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
         private val SIGNUP_URL_REGEX =

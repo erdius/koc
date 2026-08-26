@@ -66,6 +66,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -144,6 +145,7 @@ import com.erdman.kofc6650.data.PhotoUploadFile
 import com.erdman.kofc6650.data.PinManager
 import com.erdman.kofc6650.data.RecentPhotoDto
 import com.erdman.kofc6650.data.RsvpStore
+import com.erdman.kofc6650.data.SignupStatusDto
 import com.erdman.kofc6650.data.WhatsNew
 import com.erdman.kofc6650.ui.theme.KofC6650Theme
 import com.erdman.kofc6650.ui.theme.KofcGold
@@ -162,6 +164,7 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -1724,6 +1727,223 @@ private fun BadgePaymentDialog(onDismiss: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
+    val repository = remember { KofcRepository() }
+    val scope = rememberCoroutineScope()
+
+    var isLoading by remember { mutableStateOf(true) }
+    var loadFailed by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<SignupStatusDto?>(null) }
+    var signedUp by remember { mutableStateOf(false) }
+
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var whatsapp by remember { mutableStateOf("") }
+    var asAlternate by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    suspend fun loadStatus() {
+        isLoading = true
+        loadFailed = false
+        status = try {
+            repository.getFeedTheHomelessStatus()
+        } catch (e: Exception) {
+            loadFailed = true
+            null
+        }
+        isLoading = false
+    }
+
+    LaunchedEffect(Unit) { loadStatus() }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = { Text("Feed the Homeless") },
+                    actions = { TextButton(onClick = onDismiss) { Text("Close") } },
+                )
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    val currentStatus = status
+                    when {
+                        isLoading -> {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(color = KofcNavy)
+                            }
+                        }
+                        loadFailed -> {
+                            Text("Couldn't load signup status. Try again in a moment.", color = Color(0xFFA12626))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = { scope.launch { loadStatus() } },
+                                colors = ButtonDefaults.buttonColors(containerColor = KofcNavy, contentColor = KofcGold),
+                            ) {
+                                Text("Retry")
+                            }
+                        }
+                        signedUp -> {
+                            Text(
+                                "You're signed up! See you there.",
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1E6B34),
+                            )
+                        }
+                        currentStatus == null || !currentStatus.open -> {
+                            Text(
+                                "Signups for the next Feed the Homeless event haven't opened yet. Check back soon, or watch for the announcement email.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        else -> {
+                            val full = currentStatus.filledCount >= currentStatus.totalCount
+                            Text(formatDate(currentStatus.date ?: ""), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                            Text(
+                                "${currentStatus.filledCount} of ${currentStatus.totalCount} spots filled",
+                                fontSize = 13.sp,
+                                color = KofcGoldMuted,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            if (full) {
+                                Text(
+                                    "All spots are filled for this date. Thank you to everyone who signed up!",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                val alternateTaken = currentStatus.slots.firstOrNull { it.label == "Alternate" }?.name != null
+
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = name,
+                                    onValueChange = { name = it },
+                                    label = { Text("Your Name") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = email,
+                                    onValueChange = { email = it },
+                                    label = { Text("Email") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = whatsapp,
+                                    onValueChange = { whatsapp = it },
+                                    label = { Text("WhatsApp (optional)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+
+                                if (!alternateTaken) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { asAlternate = !asAlternate }
+                                            .padding(top = 10.dp),
+                                    ) {
+                                        Checkbox(checked = asAlternate, onCheckedChange = { asAlternate = it })
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Sign me up as the Alternate instead", fontSize = 13.sp)
+                                    }
+                                }
+
+                                errorMessage?.let {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(it, color = Color(0xFFA12626))
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = {
+                                        val trimmedName = name.trim()
+                                        val trimmedEmail = email.trim()
+                                        if (trimmedName.isBlank()) {
+                                            errorMessage = "Enter your name."
+                                            return@Button
+                                        }
+                                        if (!trimmedEmail.contains("@")) {
+                                            errorMessage = "Enter a valid email."
+                                            return@Button
+                                        }
+                                        errorMessage = null
+                                        isSubmitting = true
+                                        scope.launch {
+                                            repository.claimFeedTheHomelessSlot(
+                                                trimmedName,
+                                                trimmedEmail,
+                                                whatsapp.trim(),
+                                                asAlternate,
+                                            )
+                                            // The write can take a moment to show up on a
+                                            // re-fetch, so poll a few times (checking for
+                                            // this exact name, not just a count change --
+                                            // someone else could be signing up at the same
+                                            // moment) before concluding it actually failed.
+                                            var matched = false
+                                            var latest: SignupStatusDto? = null
+                                            for (delayMs in listOf(600L, 1200L, 1800L)) {
+                                                delay(delayMs)
+                                                latest = try {
+                                                    repository.getFeedTheHomelessStatus()
+                                                } catch (e: Exception) {
+                                                    null
+                                                }
+                                                if (latest?.open == true && latest.slots.any { it.name == trimmedName }) {
+                                                    matched = true
+                                                    break
+                                                }
+                                                if (latest?.open == true && latest.filledCount >= latest.totalCount) {
+                                                    break
+                                                }
+                                            }
+                                            isSubmitting = false
+                                            if (matched) {
+                                                status = latest
+                                                signedUp = true
+                                            } else if (latest?.open == true && latest.filledCount >= latest.totalCount) {
+                                                errorMessage = if (asAlternate) {
+                                                    "The alternate spot may already be taken. Refresh to check."
+                                                } else {
+                                                    "Someone just took the last spot for this date."
+                                                }
+                                            } else {
+                                                errorMessage = "Couldn't confirm your signup. Refresh first — you may already be signed up — before trying again."
+                                            }
+                                        }
+                                    },
+                                    enabled = !isSubmitting,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = KofcNavy, contentColor = KofcGold),
+                                ) {
+                                    if (isSubmitting) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = KofcGold, strokeWidth = 2.dp)
+                                    } else {
+                                        Text("Sign Up")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun PhotosTab(repository: KofcRepository, pinManager: PinManager) {
     val context = LocalContext.current
@@ -2305,6 +2525,7 @@ private fun EventCard(
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     var showAddToCalendarSheet by remember { mutableStateOf(false) }
+    var showFeedTheHomelessSheet by remember { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
 
     if (showAddToCalendarSheet) {
@@ -2317,6 +2538,10 @@ private fun EventCard(
             },
             onCancel = { showAddToCalendarSheet = false },
         )
+    }
+
+    if (showFeedTheHomelessSheet) {
+        FeedTheHomelessSignupDialog(onDismiss = { showFeedTheHomelessSheet = false })
     }
 
     Card(
@@ -2358,23 +2583,22 @@ private fun EventCard(
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
-            // Feed the Homeless reuses one signup link across every
-            // occurrence, so it always opens whatever sheet is currently
-            // live rather than the date shown here.
-            if (event.title == "Feed the Homeless") {
-                Text(
-                    text = "⚠️ This event uses a recurring signup link that doesn't change. Please make sure the signup sheet matches this date before signing up.",
-                    fontSize = 12.sp,
-                    color = Color(0xFF666666),
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
             FlowRow(
                 modifier = Modifier.padding(top = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (!event.signupUrl.isNullOrBlank()) {
+                if (event.title == "Feed the Homeless") {
+                    Button(
+                        onClick = { showFeedTheHomelessSheet = true },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = KofcNavy,
+                            contentColor = KofcGold,
+                        ),
+                    ) {
+                        Text("Sign Up to Volunteer →")
+                    }
+                } else if (!event.signupUrl.isNullOrBlank()) {
                     Button(
                         onClick = { onSignUpClick(event.signupUrl) },
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
