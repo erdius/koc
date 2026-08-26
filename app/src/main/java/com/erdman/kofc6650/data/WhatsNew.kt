@@ -9,7 +9,8 @@ import android.content.Context
  */
 object WhatsNew {
     const val VERSION = "1.0.15"
-    const val CHANGELOG = "• New Month view for the Sign Ups and Calendar tabs — toggle between Agenda and Month to browse events on a calendar grid\n" +
+    const val CHANGELOG = "• Feed the Homeless signups now happen right in the app instead of an external link\n" +
+        "• New Month view for the Sign Ups and Calendar tabs — toggle between Agenda and Month to browse events on a calendar grid\n" +
         "• Updated contact info on the Directors & Officers page"
 
     private const val PREFS_NAME = "whats_new"
