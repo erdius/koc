@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Star
@@ -136,6 +137,7 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.erdman.kofc6650.data.ArchiveMonthDto
+import com.erdman.kofc6650.data.DriveFileDto
 import com.erdman.kofc6650.data.EventDto
 import com.erdman.kofc6650.data.FontScalePreference
 import com.erdman.kofc6650.data.KofcRepository
@@ -175,10 +177,15 @@ class MainActivity : ComponentActivity() {
     // just an index into the same KofcApp's TabRow. Held at the Activity
     // level (not inside KofcApp's state) so onNewIntent can update it too.
     private val pendingTargetTab = mutableStateOf<Int?>(null)
+    // Distinguishes the Submit Photos vs. Recent Photos shortcuts now that
+    // they're one merged tab with a Browse/Submit toggle instead of two
+    // separate tab indices.
+    private val pendingPhotosMode = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingTargetTab.value = intent?.getStringExtra("target_tab")?.toIntOrNull()
+        pendingPhotosMode.value = intent?.getStringExtra("photos_mode")
         setContent {
             val appearanceModePref = remember { com.erdman.kofc6650.data.AppearanceModePreference(this) }
             val darkTheme = when (appearanceModePref.mode) {
@@ -188,7 +195,11 @@ class MainActivity : ComponentActivity() {
             }
             KofC6650Theme(darkTheme = darkTheme) {
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    KofcApp(pendingTargetTab = pendingTargetTab, appearanceModePref = appearanceModePref)
+                    KofcApp(
+                        pendingTargetTab = pendingTargetTab,
+                        pendingPhotosMode = pendingPhotosMode,
+                        appearanceModePref = appearanceModePref,
+                    )
                 }
             }
         }
@@ -198,6 +209,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingTargetTab.value = intent.getStringExtra("target_tab")?.toIntOrNull()
+        pendingPhotosMode.value = intent.getStringExtra("photos_mode")
     }
 }
 
@@ -238,6 +250,7 @@ private fun updateNextEventWidget(context: android.content.Context, allEvents: L
 @Composable
 fun KofcApp(
     pendingTargetTab: MutableState<Int?> = remember { mutableStateOf(null) },
+    pendingPhotosMode: MutableState<String?> = remember { mutableStateOf(null) },
     appearanceModePref: com.erdman.kofc6650.data.AppearanceModePreference? = null,
 ) {
     val repository = remember { KofcRepository() }
@@ -279,9 +292,6 @@ fun KofcApp(
             pendingTargetTab.value = null
         }
     }
-    var events by remember { mutableStateOf<List<EventDto>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var eventsError by remember { mutableStateOf<String?>(null) }
     var allEvents by remember { mutableStateOf<List<EventDto>>(emptyList()) }
     var isLoadingAllEvents by remember { mutableStateOf(true) }
     var allEventsError by remember { mutableStateOf<String?>(null) }
@@ -292,6 +302,25 @@ fun KofcApp(
     var feedTheHomelessStatus by remember { mutableStateOf<SignupStatusDto?>(null) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val offlineCache = remember { OfflineCache(context) }
+    // true = Browse, false = Submit -- defaults to Browse since viewing is
+    // the more common reason someone opens this tab.
+    var photosBrowseMode by remember { mutableStateOf(true) }
+    LaunchedEffect(pendingPhotosMode.value) {
+        pendingPhotosMode.value?.let {
+            photosBrowseMode = it != "submit"
+            pendingPhotosMode.value = null
+        }
+    }
+
+    // Mirrors the old "Recent Photos" tab's onClick behavior (mark seen the
+    // moment that content becomes visible), just keyed on the merged tab's
+    // mode instead of a separate tab selection.
+    LaunchedEffect(tabIndex, photosBrowseMode) {
+        if (tabIndex == 2 && photosBrowseMode) {
+            offlineCache.markPhotosSeen(photos)
+            hasNewPhotos = false
+        }
+    }
 
     // Refetch whenever the app comes back to the foreground, so events/photos
     // added elsewhere show up without the user having to remember to tap the
@@ -315,15 +344,11 @@ fun KofcApp(
 
     LaunchedEffect(refreshTrigger) {
         if (com.erdman.kofc6650.data.ScreenshotMode.isActive(context)) {
-            events = com.erdman.kofc6650.data.ScreenshotMode.sampleSignupEvents
             allEvents = com.erdman.kofc6650.data.ScreenshotMode.sampleAllEvents
-            isLoading = false
             isLoadingAllEvents = false
             isLoadingPhotos = false
             return@LaunchedEffect
         }
-        isLoading = true
-        eventsError = null
         isLoadingAllEvents = true
         allEventsError = null
         isLoadingPhotos = true
@@ -332,23 +357,17 @@ fun KofcApp(
             launch {
                 try {
                     val bundle = repository.getCouncilEvents()
-                    events = bundle.signupEvents
                     allEvents = bundle.allEvents
                     offlineCache.saveEvents(bundle.signupEvents, bundle.allEvents)
                 } catch (e: Exception) {
                     val cached = offlineCache.loadEvents()
                     if (cached != null) {
-                        events = cached.signupEvents
                         allEvents = cached.allEvents
-                        val message = "Showing saved events from ${offlineCache.relativeEventsSavedAt()} — couldn't reach the server."
-                        eventsError = message
-                        allEventsError = message
+                        allEventsError = "Showing saved events from ${offlineCache.relativeEventsSavedAt()} — couldn't reach the server."
                     } else {
-                        eventsError = "Could not load calendar events."
                         allEventsError = "Could not load calendar events."
                     }
                 } finally {
-                    isLoading = false
                     isLoadingAllEvents = false
                     updateNextEventWidget(context, allEvents)
                 }
@@ -464,28 +483,19 @@ fun KofcApp(
                     Tab(
                         selected = tabIndex == 0,
                         onClick = { tabIndex = 0 },
-                        text = { Text("Volunteer Sign Ups") },
+                        text = { Text("Calendar") },
                     )
                     Tab(
                         selected = tabIndex == 1,
                         onClick = { tabIndex = 1 },
-                        text = { Text("Calendar") },
+                        text = { Text("Minutes") },
                     )
                     Tab(
                         selected = tabIndex == 2,
                         onClick = { tabIndex = 2 },
-                        text = { Text("Submit Photos") },
-                    )
-                    Tab(
-                        selected = tabIndex == 3,
-                        onClick = {
-                            tabIndex = 3
-                            offlineCache.markPhotosSeen(photos)
-                            hasNewPhotos = false
-                        },
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Recent Photos")
+                                Text("Photos")
                                 if (hasNewPhotos) {
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Box(
@@ -498,8 +508,8 @@ fun KofcApp(
                         },
                     )
                     Tab(
-                        selected = tabIndex == 4,
-                        onClick = { tabIndex = 4 },
+                        selected = tabIndex == 3,
+                        onClick = { tabIndex = 3 },
                         text = { Text("Payments") },
                     )
                 }
@@ -511,26 +521,11 @@ fun KofcApp(
             // tab's data -- once there's something to show, a refresh
             // (pull-to-refresh or tab resume) should keep the list visible
             // with its own pull indicator instead of blanking the screen.
-            if (isLoading && events.isEmpty() && tabIndex == 0) {
+            if (isLoadingAllEvents && allEvents.isEmpty() && tabIndex == 0) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = KofcNavy)
                 }
             } else if (tabIndex == 0) {
-                CalendarTab(
-                    events = events,
-                    errorMessage = eventsError,
-                    isRefreshing = isLoading,
-                    onRefresh = { refreshTrigger++ },
-                    onSignUpClick = { url ->
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    },
-                    feedTheHomelessStatus = feedTheHomelessStatus,
-                )
-            } else if (tabIndex == 1 && isLoadingAllEvents && allEvents.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = KofcNavy)
-                }
-            } else if (tabIndex == 1) {
                 CalendarAgendaTab(
                     events = allEvents,
                     errorMessage = allEventsError,
@@ -541,19 +536,22 @@ fun KofcApp(
                     },
                     feedTheHomelessStatus = feedTheHomelessStatus,
                 )
-            } else if (tabIndex == 2) {
-                PhotosTab(repository = repository, pinManager = pinManager)
-            } else if (tabIndex == 3 && isLoadingPhotos && photos.isEmpty()) {
+            } else if (tabIndex == 1) {
+                MinutesTab(repository = repository)
+            } else if (tabIndex == 2 && photosBrowseMode && isLoadingPhotos && photos.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = KofcNavy)
                 }
-            } else if (tabIndex == 3) {
-                RecentPhotosTab(
+            } else if (tabIndex == 2) {
+                PhotosTab(
                     repository = repository,
+                    pinManager = pinManager,
                     photos = photos,
-                    errorMessage = photosError,
-                    isRefreshing = isLoadingPhotos,
-                    onRefresh = { refreshTrigger++ },
+                    photosError = photosError,
+                    isLoadingPhotos = isLoadingPhotos,
+                    onRefreshPhotos = { refreshTrigger++ },
+                    browseMode = photosBrowseMode,
+                    onBrowseModeChange = { photosBrowseMode = it },
                 )
             } else {
                 PaymentsTab()
@@ -1016,11 +1014,43 @@ private fun RsvpLegend() {
     }
 }
 
-// A slim, full-width pill toggle (matching the iOS segmented control's
-// compact look) rather than Material3's default SegmentedButton, which
-// can't be shrunk below its built-in min height/padding.
+// A single icon button (rather than a full-width Agenda/Month pill) that
+// sits inline with the title -- the icon shows the mode a tap switches TO,
+// with a filled background once Month is active so the button still reads
+// as a toggle rather than a plain action button.
 @Composable
-private fun CalendarViewModeToggle(pref: com.erdman.kofc6650.data.CalendarViewModePreference) {
+private fun ViewModeIconToggle(pref: com.erdman.kofc6650.data.CalendarViewModePreference) {
+    val isMonth = pref.mode == com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
+    IconButton(
+        onClick = {
+            pref.choose(
+                if (isMonth) {
+                    com.erdman.kofc6650.data.CalendarViewModePreference.Mode.AGENDA
+                } else {
+                    com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
+                },
+            )
+        },
+        modifier = Modifier
+            .size(36.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isMonth) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent),
+    ) {
+        Icon(
+            Icons.Filled.DateRange,
+            contentDescription = if (isMonth) "Switch to Agenda view" else "Switch to Month view",
+            tint = if (isMonth) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+// Same slim pill look the Agenda/Month toggle used to have, but for the
+// separate all-events vs. sign-up-opportunities-only filter (session-only
+// state, not persisted -- unlike the view mode, there's no strong reason to
+// remember this choice across app launches).
+@Composable
+private fun EventFilterToggle(signupOnly: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1028,19 +1058,19 @@ private fun CalendarViewModeToggle(pref: com.erdman.kofc6650.data.CalendarViewMo
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(2.dp),
     ) {
-        com.erdman.kofc6650.data.CalendarViewModePreference.Mode.entries.forEach { mode ->
-            val selected = pref.mode == mode
+        listOf(false to "All Events", true to "Volunteer").forEach { (value, label) ->
+            val selected = signupOnly == value
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
-                    .clickable { pref.choose(mode) }
+                    .clickable { onChange(value) }
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = mode.label,
+                    text = label,
                     fontSize = 13.sp,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1221,93 +1251,33 @@ private fun LazyListScope.monthCalendarContent(
     }
 }
 
+private fun eventMatchesQuery(event: EventDto, query: String): Boolean {
+    val q = query.trim()
+    if (q.isEmpty()) return true
+    return event.title.contains(q, ignoreCase = true) ||
+        event.location?.contains(q, ignoreCase = true) == true ||
+        event.description?.contains(q, ignoreCase = true) == true
+}
+
 @Composable
-private fun CalendarTab(
-    events: List<EventDto>,
-    errorMessage: String?,
-    isRefreshing: Boolean,
-    onRefresh: () -> Unit,
-    onSignUpClick: (String) -> Unit,
-    feedTheHomelessStatus: SignupStatusDto?,
-) {
-    val context = LocalContext.current
-    val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
-    val today = LocalDate.now()
-    val upcoming = events.filter { event ->
-        val date = try {
-            LocalDate.parse(event.date)
-        } catch (e: Exception) {
-            null
-        }
-        date != null && !date.isBefore(today)
-    }
-
-    val isMonthMode = viewModePref.mode == com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
-    val listState = rememberLazyListState()
-    val gridItemIndex = if (errorMessage != null) 2 else 1
-    val density = LocalDensity.current
-    var headerHeightPx by remember { mutableIntStateOf(0) }
-    val headerHeight = with(density) { headerHeightPx.toDp() }
-    LaunchedEffect(isMonthMode, errorMessage != null, headerHeightPx) {
-        if (isMonthMode) {
-            listState.animateScrollToItem(gridItemIndex)
-        }
-    }
-
-    RefreshableList(isRefreshing = isRefreshing, onRefresh = onRefresh, listState = listState) {
-        item {
-            Column(modifier = Modifier.onGloballyPositioned { headerHeightPx = it.size.height }) {
-                CompositionLocalProvider(LocalDensity provides Density(density = LocalDensity.current.density, fontScale = 1f)) {
-                    Text(
-                        text = "Volunteer Opportunities",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                CalendarViewModeToggle(viewModePref)
-                Spacer(modifier = Modifier.height(8.dp))
-                RsvpLegend()
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-        }
-
-        if (errorMessage != null) {
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5))) {
-                    Text(
-                        text = errorMessage,
-                        color = Color(0xFFC0392B),
-                        modifier = Modifier.padding(14.dp),
-                    )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-        }
-
-        if (isMonthMode) {
-            // Both the month grid and the agenda list's trailing "Past 2
-            // weeks" section (below) want the last 14 days too -- `events`
-            // is already fetched no further back than that, so it can be
-            // passed straight through instead of `upcoming`.
-            monthCalendarContent(events, onSignUpClick, headerHeight, feedTheHomelessStatus)
-        } else {
-            if (errorMessage == null && upcoming.isEmpty()) {
-                item {
-                    Text(
-                        text = "No upcoming events on the calendar.",
-                        color = Color(0xFF999999),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                    )
+private fun EventSearchField(query: String, onQueryChange: (String) -> Unit) {
+    androidx.compose.material3.OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = { Text("Search events…", fontSize = 14.sp) },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Clear search", modifier = Modifier.size(18.dp))
                 }
             }
-
-            eventSections(events, onSignUpClick, feedTheHomelessStatus)
-        }
-    }
+        },
+        singleLine = true,
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+    )
 }
 
 @Composable
@@ -1322,7 +1292,13 @@ private fun CalendarAgendaTab(
     val context = LocalContext.current
     val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
     val today = LocalDate.now()
-    val upcoming = events
+    var signupOnly by remember { mutableStateOf(false) }
+    // What used to be the separate Volunteer Sign Ups tab is now just this
+    // filter -- same predicate the repository used to build that tab's
+    // event list (getCouncilEvents' signupOnly), applied client-side here
+    // instead so it composes with the view mode and search below.
+    val baseEvents = if (signupOnly) events.filter { !it.signupUrl.isNullOrBlank() } else events
+    val upcoming = baseEvents
         .filter { event ->
             val date = try {
                 LocalDate.parse(event.date)
@@ -1335,7 +1311,7 @@ private fun CalendarAgendaTab(
     // The month grid also keeps the last 2 weeks of past events for
     // context (unlike the list view above, which stays today-or-later
     // only) -- selecting a recent past date still shows what happened.
-    val monthViewEvents = events
+    val monthViewEvents = baseEvents
         .filter { event ->
             val date = try {
                 LocalDate.parse(event.date)
@@ -1345,6 +1321,8 @@ private fun CalendarAgendaTab(
             date != null && !date.isBefore(today.minusDays(14))
         }
         .sortedBy { it.date }
+    var searchQuery by remember { mutableStateOf("") }
+    val searchActive = searchQuery.isNotBlank()
 
     val isMonthMode = viewModePref.mode == com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
     val listState = rememberLazyListState()
@@ -1353,7 +1331,7 @@ private fun CalendarAgendaTab(
     var headerHeightPx by remember { mutableIntStateOf(0) }
     val headerHeight = with(density) { headerHeightPx.toDp() }
     LaunchedEffect(isMonthMode, errorMessage != null, headerHeightPx) {
-        if (isMonthMode) {
+        if (isMonthMode && !searchActive) {
             listState.animateScrollToItem(gridItemIndex)
         }
     }
@@ -1362,20 +1340,28 @@ private fun CalendarAgendaTab(
         item {
             Column(modifier = Modifier.onGloballyPositioned { headerHeightPx = it.size.height }) {
                 CompositionLocalProvider(LocalDensity provides Density(density = LocalDensity.current.density, fontScale = 1f)) {
-                    Text(
-                        text = "Upcoming Events",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(modifier = Modifier.width(40.dp))
+                        Text(
+                            text = "Upcoming Events",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f),
+                        )
+                        ViewModeIconToggle(viewModePref)
+                    }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                CalendarViewModeToggle(viewModePref)
+                EventFilterToggle(signupOnly) { signupOnly = it }
                 Spacer(modifier = Modifier.height(8.dp))
-                RsvpLegend()
-                Spacer(modifier = Modifier.height(16.dp))
+                EventSearchField(searchQuery) { searchQuery = it }
+                Spacer(modifier = Modifier.height(8.dp))
+                if (!searchActive) {
+                    RsvpLegend()
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
         }
 
@@ -1392,7 +1378,23 @@ private fun CalendarAgendaTab(
             }
         }
 
-        if (isMonthMode) {
+        if (searchActive) {
+            val results = baseEvents.filter { eventMatchesQuery(it, searchQuery) }.sortedBy { it.date }
+            if (results.isEmpty()) {
+                item {
+                    Text(
+                        text = "No events match \"$searchQuery\".",
+                        color = Color(0xFF999999),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                    )
+                }
+            } else {
+                items(results) { event ->
+                    EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessStatus = feedTheHomelessStatus)
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+        } else if (isMonthMode) {
             monthCalendarContent(monthViewEvents, onSignUpClick, headerHeight, feedTheHomelessStatus)
         } else {
             if (errorMessage == null && upcoming.isEmpty()) {
@@ -1410,9 +1412,9 @@ private fun CalendarAgendaTab(
     }
 }
 
-// Groups events into Today / This Week / Later / Past 2 weeks sections so
-// a longer list is easier to scan at a glance instead of one flat
-// chronological list. Only the Sign Ups tab's agenda feeds this a past
+// Groups events into Today / This Week / Next Week / Later / Past 2 weeks
+// sections so a longer list is easier to scan at a glance instead of one
+// flat chronological list. Only the Sign Ups tab's agenda feeds this a past
 // event, but the Calendar tab's list stays today-or-later, so "Past 2
 // weeks" simply never has anything in it there.
 private fun dateBucket(dateStr: String): String {
@@ -1422,6 +1424,7 @@ private fun dateBucket(dateStr: String): String {
         days < 0L -> "Past 2 weeks"
         days == 0L -> "Today"
         days in 1..6 -> "This Week"
+        days in 7..13 -> "Next Week"
         else -> "Later"
     }
 }
@@ -1431,7 +1434,7 @@ private fun LazyListScope.eventSections(
     onSignUpClick: (String) -> Unit,
     feedTheHomelessStatus: SignupStatusDto?,
 ) {
-    for (bucketName in listOf("Today", "This Week", "Later", "Past 2 weeks")) {
+    for (bucketName in listOf("Today", "This Week", "Next Week", "Later", "Past 2 weeks")) {
         val bucketEvents = events.filter { dateBucket(it.date) == bucketName }.sortedBy { it.date }
         if (bucketEvents.isNotEmpty()) {
             item {
@@ -1995,8 +1998,262 @@ private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
     }
 }
 
+// Self-contained (fetches its own data, matching PhotosTab's pattern)
+// rather than threaded through KofcApp's shared refreshTrigger bundle --
+// council minutes change on their own schedule, unrelated to
+// events/photos, so there's no reason to couple its fetch to theirs.
 @Composable
-private fun PhotosTab(repository: KofcRepository, pinManager: PinManager) {
+private fun MinutesTab(repository: KofcRepository) {
+    val context = LocalContext.current
+    var files by remember { mutableStateOf<List<DriveFileDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+    var showPastYears by remember { mutableStateOf(false) }
+
+    LaunchedEffect(refreshTrigger) {
+        isLoading = true
+        errorMessage = null
+        try {
+            files = repository.getMinutesFiles()
+        } catch (e: Exception) {
+            errorMessage = "Could not load minutes. Pull down to try again."
+        } finally {
+            isLoading = false
+        }
+    }
+
+    // Files with no parseable date prefix stay in the current list rather
+    // than silently vanishing into an archive nobody thinks to check.
+    val currentYear = remember { LocalDate.now().year }
+    val currentFiles = remember(files) { files.filter { (minutesFileYear(it.name) ?: currentYear) >= currentYear } }
+    val pastYearFiles = remember(files) { files.filter { (minutesFileYear(it.name) ?: currentYear) < currentYear } }
+
+    if (isLoading && files.isEmpty() && errorMessage == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = KofcNavy)
+        }
+    } else {
+        RefreshableList(isRefreshing = isLoading, onRefresh = { refreshTrigger++ }) {
+            item {
+                CompositionLocalProvider(LocalDensity provides Density(density = LocalDensity.current.density, fontScale = 1f)) {
+                    Text(
+                        text = "Council Minutes",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (errorMessage != null) {
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5))) {
+                        Text(
+                            text = errorMessage!!,
+                            color = Color(0xFFC0392B),
+                            modifier = Modifier.padding(14.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+
+            if (errorMessage == null && files.isEmpty()) {
+                item {
+                    Text(
+                        text = "No minutes found.",
+                        color = Color(0xFF999999),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                    )
+                }
+            }
+
+            items(currentFiles) { file ->
+                MinutesFileCard(
+                    file = file,
+                    onOpen = {
+                        file.webViewLink?.let { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
+                    },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (pastYearFiles.isNotEmpty()) {
+                item {
+                    Text(
+                        text = (if (showPastYears) "▲ Hide" else "▼ Show") + " Past Years (${pastYearFiles.size})",
+                        color = KofcGoldMuted,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showPastYears = !showPastYears }
+                            .padding(vertical = 12.dp),
+                    )
+                }
+                if (showPastYears) {
+                    items(pastYearFiles) { file ->
+                        MinutesFileCard(
+                            file = file,
+                            onOpen = {
+                                file.webViewLink?.let { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
+                            },
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Returns null (rather than guessing) for anything that doesn't start with
+// a parseable date -- callers treat null as "keep it visible" so an
+// unexpected file name never disappears into the Past Years section.
+private fun minutesFileYear(name: String): Int? {
+    val withoutExtension = name.removeSuffix(".pdf").removeSuffix(".PDF")
+    return try {
+        LocalDate.parse(withoutExtension.take(10)).year
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private data class ParsedMinutesFile(val title: String, val dateLabel: String?)
+
+// Filenames are consistently "yyyy-MM-dd <description>.pdf" (the meeting
+// date, not the upload date) -- parsed out for display since it's more
+// useful than the raw file name, with the raw name as a graceful fallback
+// for anything that doesn't follow the convention.
+private fun parseMinutesFileName(name: String): ParsedMinutesFile {
+    val withoutExtension = name.removeSuffix(".pdf").removeSuffix(".PDF")
+    val datePrefix = withoutExtension.take(10)
+    val hasDatePrefix = try {
+        LocalDate.parse(datePrefix)
+        true
+    } catch (e: Exception) {
+        false
+    }
+    return if (hasDatePrefix) {
+        val rest = withoutExtension.drop(10).trim().removePrefix("-").trim()
+        ParsedMinutesFile(title = rest.ifBlank { withoutExtension }, dateLabel = formatDate(datePrefix))
+    } else {
+        ParsedMinutesFile(title = withoutExtension, dateLabel = null)
+    }
+}
+
+@Composable
+private fun MinutesFileCard(file: DriveFileDto, onOpen: () -> Unit) {
+    val parsed = remember(file.name) { parseMinutesFileName(file.name) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = parsed.title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (parsed.dateLabel != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "📅 " + parsed.dateLabel,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = KofcGoldMuted,
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+                onClick = onOpen,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = KofcNavy,
+                    contentColor = KofcGold,
+                ),
+            ) {
+                Text("View Minutes →")
+            }
+        }
+    }
+}
+
+// Same slim pill look as the other filter/mode toggles in this file, for
+// switching the merged Photos tab between browsing and submitting --
+// session-only state, not persisted, matching EventFilterToggle's reasoning.
+@Composable
+private fun PhotosModeToggle(browseMode: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(2.dp),
+    ) {
+        listOf(true to "Browse", false to "Submit").forEach { (value, label) ->
+            val selected = browseMode == value
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
+                    .clickable { onChange(value) }
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+// Merges what used to be the separate Submit Photos and Recent Photos tabs
+// behind a toggle -- both underlying composables are untouched, this just
+// picks which one to show.
+@Composable
+private fun PhotosTab(
+    repository: KofcRepository,
+    pinManager: PinManager,
+    photos: List<RecentPhotoDto>,
+    photosError: String?,
+    isLoadingPhotos: Boolean,
+    onRefreshPhotos: () -> Unit,
+    browseMode: Boolean,
+    onBrowseModeChange: (Boolean) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            PhotosModeToggle(browseMode, onBrowseModeChange)
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            if (browseMode) {
+                RecentPhotosTab(
+                    repository = repository,
+                    photos = photos,
+                    errorMessage = photosError,
+                    isRefreshing = isLoadingPhotos,
+                    onRefresh = onRefreshPhotos,
+                )
+            } else {
+                SubmitPhotosTab(repository = repository, pinManager = pinManager)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubmitPhotosTab(repository: KofcRepository, pinManager: PinManager) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 

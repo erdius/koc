@@ -56,6 +56,7 @@ class KofcRepository {
     private val api = retrofit.create(GoogleCalendarApi::class.java)
     private val recentPhotosApi = retrofit.create(RecentPhotosApi::class.java)
     private val signupApi = retrofit.create(SignupApi::class.java)
+    private val driveApi = retrofit.create(GoogleDriveApi::class.java)
 
     suspend fun getRecentPhotos(): List<RecentPhotoDto> =
         recentPhotosApi.getRecentPhotos(RECENT_PHOTOS_API_URL)
@@ -68,6 +69,13 @@ class KofcRepository {
 
     suspend fun getFeedTheHomelessStatus(): SignupStatusDto =
         signupApi.getStatus(SIGNUP_API_URL)
+
+    // Excludes subfolders (e.g. "Archive") -- this is a flat list of the
+    // current minutes only, not a full file browser.
+    suspend fun getMinutesFiles(): List<DriveFileDto> {
+        val query = "'$MINUTES_FOLDER_ID' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false"
+        return driveApi.listFiles(query = query, apiKey = API_KEY).files
+    }
 
     suspend fun claimFeedTheHomelessSlot(name: String, email: String, whatsapp: String, asAlternate: Boolean) {
         try {
@@ -182,6 +190,7 @@ class KofcRepository {
         private const val PHOTOS_ARCHIVE_API_URL = "https://koc-photos.erdcloud.org/api/photos/archive"
         private const val PHOTOS_UPLOAD_API_URL = "https://koc-photos.erdcloud.org/api/upload"
         private const val SIGNUP_API_URL = "https://script.google.com/macros/s/AKfycbynrbC2qHqgjItUpxvFKabHXSawnglZYRvQQymVKstZRd4T6mt-fM1eCfcgAylJClMZ/exec"
+        private const val MINUTES_FOLDER_ID = "1XIWKahCrq08qfRtrVWK33GCgWoQnG8TH"
 
         private val TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
         private val SIGNUP_URL_REGEX =
