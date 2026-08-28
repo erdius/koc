@@ -1893,6 +1893,16 @@ private fun FeedTheHomelessSignupDialog(initialDate: String, onDismiss: () -> Un
                                 color = KofcGoldMuted,
                                 modifier = Modifier.padding(top = 2.dp),
                             )
+                            Text(
+                                "⚠️ Please be sure to select the correct date when signing up, as registration is open several months in advance.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .padding(top = 10.dp)
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                    .padding(10.dp),
+                            )
                             Spacer(modifier = Modifier.height(12.dp))
 
                             val roster = currentStatus.slots.filter { !it.name.isNullOrBlank() }
