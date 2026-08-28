@@ -590,6 +590,7 @@ fun KofcApp(
 
 private const val JOIN_KOFC_URL = "https://www.kofc.org/get-involved/join-kofc"
 private const val JOIN_KOFC_PROMO_CODE = "BLESSEDMCGIVNEY"
+private const val FEED_THE_HOMELESS_DETAILS_URL = "https://www.kofc6650.org/programs/feed-the-homeless"
 
 @Composable
 private fun JoinKofcDialog(onDismiss: () -> Unit) {
@@ -2954,6 +2955,18 @@ private fun EventCard(
                 )
             }
             if (event.title == "Feed the Homeless") {
+                Text(
+                    text = "Event Details →",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = KofcGoldMuted,
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clickable {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FEED_THE_HOMELESS_DETAILS_URL)))
+                        },
+                )
                 if (isFeedTheHomelessOpenForThisDate) {
                     val filled = matchingOpenDate!!.filledCount
                     val total = matchingOpenDate.totalCount
