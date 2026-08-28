@@ -8,10 +8,9 @@ import android.content.Context
  * app launches after updating to that version.
  */
 object WhatsNew {
-    const val VERSION = "1.0.16"
-    const val CHANGELOG = "• Search the calendar by title, location, or description\n" +
-        "• New Minutes tab with past council meeting minutes\n" +
-        "• Sign-ups and photo browsing are now filters/toggles on their tabs instead of separate tabs"
+    const val VERSION = "1.0.17"
+    const val CHANGELOG = "• Feed the Homeless: multiple dates can now be open at once — use the arrows to browse and sign up for whichever works for you\n" +
+        "• Feed the Homeless events now link to full event details"
 
     private const val PREFS_NAME = "whats_new"
     private const val KEY_LAST_SEEN = "last_seen_version"
