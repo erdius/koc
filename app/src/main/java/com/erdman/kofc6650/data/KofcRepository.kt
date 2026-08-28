@@ -3,6 +3,7 @@ package com.erdman.kofc6650.data
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -67,8 +68,25 @@ class KofcRepository {
     suspend fun getArchivedPhotos(month: String): List<RecentPhotoDto> =
         recentPhotosApi.getRecentPhotos("$PHOTOS_ARCHIVE_API_URL/$month")
 
+    // The Feed the Homeless backend is a Google Apps Script Web App, which
+    // occasionally takes far longer than usual (cold starts, redirect-echo
+    // flakiness) or fails outright on a single request even when the
+    // service is otherwise healthy. Retrying silently a couple of times
+    // smooths over that instead of surfacing a hard error on what's often
+    // just one bad round trip.
     suspend fun getFeedTheHomelessStatus(): List<SignupStatusDto> =
-        signupApi.getStatus(SIGNUP_API_URL).openDates
+        retryIO(times = 3) { signupApi.getStatus(SIGNUP_API_URL).openDates }
+
+    private suspend fun <T> retryIO(times: Int, delayMs: Long = 1000, block: suspend () -> T): T {
+        repeat(times - 1) {
+            try {
+                return block()
+            } catch (e: Exception) {
+                delay(delayMs)
+            }
+        }
+        return block()
+    }
 
     // Excludes subfolders (e.g. "Archive") -- this is a flat list of the
     // current minutes only, not a full file browser.
