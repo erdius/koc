@@ -67,8 +67,8 @@ class KofcRepository {
     suspend fun getArchivedPhotos(month: String): List<RecentPhotoDto> =
         recentPhotosApi.getRecentPhotos("$PHOTOS_ARCHIVE_API_URL/$month")
 
-    suspend fun getFeedTheHomelessStatus(): SignupStatusDto =
-        signupApi.getStatus(SIGNUP_API_URL)
+    suspend fun getFeedTheHomelessStatus(): List<SignupStatusDto> =
+        signupApi.getStatus(SIGNUP_API_URL).openDates
 
     // Excludes subfolders (e.g. "Archive") -- this is a flat list of the
     // current minutes only, not a full file browser.
@@ -77,9 +77,9 @@ class KofcRepository {
         return driveApi.listFiles(query = query, apiKey = API_KEY).files
     }
 
-    suspend fun claimFeedTheHomelessSlot(name: String, email: String, whatsapp: String, asAlternate: Boolean) {
+    suspend fun claimFeedTheHomelessSlot(date: String, name: String, email: String, whatsapp: String, asAlternate: Boolean) {
         try {
-            signupApi.claim(SIGNUP_API_URL, ClaimSlotRequest(name = name, email = email, whatsapp = whatsapp, asAlternate = asAlternate))
+            signupApi.claim(SIGNUP_API_URL, ClaimSlotRequest(date = date, name = name, email = email, whatsapp = whatsapp, asAlternate = asAlternate))
         } catch (e: Exception) {
             // Apps Script's POST response redirect is occasionally unreliable
             // to read back directly; the action itself still lands

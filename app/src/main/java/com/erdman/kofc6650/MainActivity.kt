@@ -299,7 +299,7 @@ fun KofcApp(
     var isLoadingPhotos by remember { mutableStateOf(true) }
     var photosError by remember { mutableStateOf<String?>(null) }
     var hasNewPhotos by remember { mutableStateOf(false) }
-    var feedTheHomelessStatus by remember { mutableStateOf<SignupStatusDto?>(null) }
+    var feedTheHomelessOpenDates by remember { mutableStateOf<List<SignupStatusDto>?>(null) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val offlineCache = remember { OfflineCache(context) }
     // true = Browse, false = Submit -- defaults to Browse since viewing is
@@ -397,7 +397,7 @@ fun KofcApp(
                 // failed fetch just leaves the card's status badge absent
                 // rather than blocking anything (the signup dialog itself
                 // still fetches its own fresh copy when opened).
-                feedTheHomelessStatus = try {
+                feedTheHomelessOpenDates = try {
                     repository.getFeedTheHomelessStatus()
                 } catch (e: Exception) {
                     null
@@ -534,7 +534,7 @@ fun KofcApp(
                     onSignUpClick = { url ->
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
-                    feedTheHomelessStatus = feedTheHomelessStatus,
+                    feedTheHomelessOpenDates = feedTheHomelessOpenDates,
                 )
             } else if (tabIndex == 1) {
                 MinutesTab(repository = repository)
@@ -1092,7 +1092,7 @@ private fun LazyListScope.monthCalendarContent(
     events: List<EventDto>,
     onSignUpClick: (String) -> Unit,
     headerHeight: Dp,
-    feedTheHomelessStatus: SignupStatusDto?,
+    feedTheHomelessOpenDates: List<SignupStatusDto>?,
 ) {
     item {
         var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
@@ -1233,7 +1233,7 @@ private fun LazyListScope.monthCalendarContent(
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 selectedDayEvents.forEach { event ->
-                    EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessStatus = feedTheHomelessStatus)
+                    EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessOpenDates = feedTheHomelessOpenDates)
                 }
             }
         }
@@ -1287,7 +1287,7 @@ private fun CalendarAgendaTab(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onSignUpClick: (String) -> Unit,
-    feedTheHomelessStatus: SignupStatusDto?,
+    feedTheHomelessOpenDates: List<SignupStatusDto>?,
 ) {
     val context = LocalContext.current
     val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
@@ -1390,12 +1390,12 @@ private fun CalendarAgendaTab(
                 }
             } else {
                 items(results) { event ->
-                    EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessStatus = feedTheHomelessStatus)
+                    EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessOpenDates = feedTheHomelessOpenDates)
                     Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         } else if (isMonthMode) {
-            monthCalendarContent(monthViewEvents, onSignUpClick, headerHeight, feedTheHomelessStatus)
+            monthCalendarContent(monthViewEvents, onSignUpClick, headerHeight, feedTheHomelessOpenDates)
         } else {
             if (errorMessage == null && upcoming.isEmpty()) {
                 item {
@@ -1407,7 +1407,7 @@ private fun CalendarAgendaTab(
                 }
             }
 
-            eventSections(upcoming, onSignUpClick, feedTheHomelessStatus)
+            eventSections(upcoming, onSignUpClick, feedTheHomelessOpenDates)
         }
     }
 }
@@ -1432,7 +1432,7 @@ private fun dateBucket(dateStr: String): String {
 private fun LazyListScope.eventSections(
     events: List<EventDto>,
     onSignUpClick: (String) -> Unit,
-    feedTheHomelessStatus: SignupStatusDto?,
+    feedTheHomelessOpenDates: List<SignupStatusDto>?,
 ) {
     for (bucketName in listOf("Today", "This Week", "Next Week", "Later", "Past 2 weeks")) {
         val bucketEvents = events.filter { dateBucket(it.date) == bucketName }.sortedBy { it.date }
@@ -1448,7 +1448,7 @@ private fun LazyListScope.eventSections(
                 )
             }
             items(bucketEvents) { event ->
-                EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessStatus = feedTheHomelessStatus)
+                EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessOpenDates = feedTheHomelessOpenDates)
                 Spacer(modifier = Modifier.height(12.dp))
             }
         }
@@ -1760,13 +1760,19 @@ private fun BadgePaymentDialog(onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
+private fun FeedTheHomelessSignupDialog(initialDate: String, onDismiss: () -> Unit) {
     val repository = remember { KofcRepository() }
     val scope = rememberCoroutineScope()
 
     var isLoading by remember { mutableStateOf(true) }
     var loadFailed by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf<SignupStatusDto?>(null) }
+    // Up to 4 dates can be open at once now -- selectedIndex tracks which
+    // one this dialog is showing, defaulting to whichever open date
+    // matches the event card that was tapped (falling back to the
+    // soonest one if that date isn't open), with left/right arrows to
+    // move between the others when there's more than one.
+    var openDates by remember { mutableStateOf<List<SignupStatusDto>>(emptyList()) }
+    var selectedIndex by remember { mutableIntStateOf(0) }
     var signedUp by remember { mutableStateOf(false) }
 
     var name by remember { mutableStateOf("") }
@@ -1779,11 +1785,16 @@ private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
     suspend fun loadStatus() {
         isLoading = true
         loadFailed = false
-        status = try {
+        val fetched = try {
             repository.getFeedTheHomelessStatus()
         } catch (e: Exception) {
             loadFailed = true
             null
+        }
+        if (fetched != null) {
+            openDates = fetched
+            val matchIndex = fetched.indexOfFirst { it.date == initialDate }
+            selectedIndex = if (matchIndex >= 0) matchIndex else 0
         }
         isLoading = false
     }
@@ -1803,7 +1814,7 @@ private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState()),
                 ) {
-                    val currentStatus = status
+                    val currentStatus = openDates.getOrNull(selectedIndex)
                     when {
                         isLoading -> {
                             Box(
@@ -1830,7 +1841,7 @@ private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
                                 color = Color(0xFF1E6B34),
                             )
                         }
-                        currentStatus == null || !currentStatus.open -> {
+                        currentStatus == null -> {
                             Text(
                                 "Signups for the next Feed the Homeless event haven't opened yet. Check back soon, or watch for the announcement email.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1838,7 +1849,43 @@ private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
                         }
                         else -> {
                             val full = currentStatus.filledCount >= currentStatus.totalCount
-                            Text(formatDate(currentStatus.date ?: ""), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                            if (openDates.size > 1) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    IconButton(
+                                        onClick = { selectedIndex-- },
+                                        enabled = selectedIndex > 0,
+                                    ) {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                            contentDescription = "Earlier date",
+                                            tint = if (selectedIndex > 0) KofcNavy else Color(0xFFCCCCCC),
+                                        )
+                                    }
+                                    Text(
+                                        "Date ${selectedIndex + 1} of ${openDates.size} open",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = KofcGoldMuted,
+                                        modifier = Modifier.weight(1f),
+                                        textAlign = TextAlign.Center,
+                                    )
+                                    IconButton(
+                                        onClick = { selectedIndex++ },
+                                        enabled = selectedIndex < openDates.size - 1,
+                                    ) {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = "Later date",
+                                            tint = if (selectedIndex < openDates.size - 1) KofcNavy else Color(0xFFCCCCCC),
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                            Text(formatDate(currentStatus.date), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                             Text(
                                 "${currentStatus.filledCount} of ${currentStatus.totalCount} spots filled",
                                 fontSize = 13.sp,
@@ -1935,8 +1982,10 @@ private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
                                         }
                                         errorMessage = null
                                         isSubmitting = true
+                                        val claimDate = currentStatus.date
                                         scope.launch {
                                             repository.claimFeedTheHomelessSlot(
+                                                claimDate,
                                                 trimmedName,
                                                 trimmedEmail,
                                                 whatsapp.trim(),
@@ -1948,27 +1997,29 @@ private fun FeedTheHomelessSignupDialog(onDismiss: () -> Unit) {
                                             // someone else could be signing up at the same
                                             // moment) before concluding it actually failed.
                                             var matched = false
-                                            var latest: SignupStatusDto? = null
+                                            var latestForDate: SignupStatusDto? = null
+                                            var latestAll: List<SignupStatusDto>? = null
                                             for (delayMs in listOf(600L, 1200L, 1800L)) {
                                                 delay(delayMs)
-                                                latest = try {
+                                                latestAll = try {
                                                     repository.getFeedTheHomelessStatus()
                                                 } catch (e: Exception) {
                                                     null
                                                 }
-                                                if (latest?.open == true && latest.slots.any { it.name == trimmedName }) {
+                                                latestForDate = latestAll?.firstOrNull { it.date == claimDate }
+                                                if (latestForDate != null && latestForDate.slots.any { it.name == trimmedName }) {
                                                     matched = true
                                                     break
                                                 }
-                                                if (latest?.open == true && latest.filledCount >= latest.totalCount) {
+                                                if (latestForDate != null && latestForDate.filledCount >= latestForDate.totalCount) {
                                                     break
                                                 }
                                             }
                                             isSubmitting = false
-                                            if (matched) {
-                                                status = latest
+                                            if (matched && latestAll != null) {
+                                                openDates = latestAll
                                                 signedUp = true
-                                            } else if (latest?.open == true && latest.filledCount >= latest.totalCount) {
+                                            } else if (latestForDate != null && latestForDate.filledCount >= latestForDate.totalCount) {
                                                 errorMessage = if (asAlternate) {
                                                     "The alternate spot may already be taken. Refresh to check."
                                                 } else {
@@ -2829,7 +2880,7 @@ private suspend fun savePhotoToGallery(context: android.content.Context, url: St
 private fun EventCard(
     event: EventDto,
     onSignUpClick: (String) -> Unit,
-    feedTheHomelessStatus: SignupStatusDto? = null,
+    feedTheHomelessOpenDates: List<SignupStatusDto>? = null,
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -2837,13 +2888,15 @@ private fun EventCard(
     var showFeedTheHomelessSheet by remember { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
 
-    // Only the one date the backend currently has open gets a status --
-    // every other Feed the Homeless occurrence (future months not opened
-    // yet) falls through to "not open"; a still-loading/failed fetch
-    // (null) is left ambiguous rather than guessed at.
-    val isFeedTheHomelessOpenForThisDate = feedTheHomelessStatus?.open == true && feedTheHomelessStatus.date == event.date
-    val isFeedTheHomelessFull = isFeedTheHomelessOpenForThisDate &&
-        feedTheHomelessStatus!!.filledCount >= feedTheHomelessStatus.totalCount
+    // Up to 4 dates can be open at once now (Kris opens several months
+    // ahead so slower volunteers still get a shot at a future date), so
+    // each card looks up its own date in the list rather than assuming
+    // there's only one open date to compare against; a still-loading/
+    // failed fetch (null) is left ambiguous rather than guessed at.
+    val matchingOpenDate = feedTheHomelessOpenDates?.firstOrNull { it.date == event.date }
+    val isFeedTheHomelessOpenForThisDate = matchingOpenDate != null
+    val isFeedTheHomelessFull = matchingOpenDate != null &&
+        matchingOpenDate.filledCount >= matchingOpenDate.totalCount
 
     if (showAddToCalendarSheet) {
         AddToCalendarTimeDialog(
@@ -2858,7 +2911,7 @@ private fun EventCard(
     }
 
     if (showFeedTheHomelessSheet) {
-        FeedTheHomelessSignupDialog(onDismiss = { showFeedTheHomelessSheet = false })
+        FeedTheHomelessSignupDialog(initialDate = event.date, onDismiss = { showFeedTheHomelessSheet = false })
     }
 
     Card(
@@ -2902,8 +2955,8 @@ private fun EventCard(
             }
             if (event.title == "Feed the Homeless") {
                 if (isFeedTheHomelessOpenForThisDate) {
-                    val filled = feedTheHomelessStatus!!.filledCount
-                    val total = feedTheHomelessStatus.totalCount
+                    val filled = matchingOpenDate!!.filledCount
+                    val total = matchingOpenDate.totalCount
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 8.dp),
@@ -2933,7 +2986,7 @@ private fun EventCard(
                                 .background(Color(0xFF3A7D5C)),
                         )
                     }
-                } else if (feedTheHomelessStatus != null) {
+                } else if (feedTheHomelessOpenDates != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 8.dp),
@@ -2966,7 +3019,7 @@ private fun EventCard(
                     // Treating "still unknown" the same as "not open" avoids
                     // ever showing a button that looks tappable-and-open before
                     // that's actually confirmed.
-                    val notReady = feedTheHomelessStatus == null
+                    val notReady = feedTheHomelessOpenDates == null
                     val notOpenYet = !notReady && !isFeedTheHomelessOpenForThisDate
                     Button(
                         onClick = { showFeedTheHomelessSheet = true },

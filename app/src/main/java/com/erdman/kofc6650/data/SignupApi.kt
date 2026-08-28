@@ -8,7 +8,7 @@ import retrofit2.http.Url
 
 interface SignupApi {
     @GET
-    suspend fun getStatus(@Url url: String): SignupStatusDto
+    suspend fun getStatus(@Url url: String): SignupStatusResponseDto
 
     // Returns the raw body rather than a parsed DTO -- the Apps Script
     // backend's POST response redirect is occasionally unreliable to read,
