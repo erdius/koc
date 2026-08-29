@@ -1018,7 +1018,7 @@ private fun RsvpLegend() {
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = "Tap the star to track your events",
+            text = "Star saves it here. Bell reminds you before it starts.",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = KofcGoldMuted,
@@ -3124,6 +3124,7 @@ private fun EventCard(
                             .clip(RoundedCornerShape(8.dp))
                             .background(KofcNavy)
                             .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (isReminderArmed) {
                                     isReminderArmed = false
                                     ReminderStore.disarm(context, event.id)
