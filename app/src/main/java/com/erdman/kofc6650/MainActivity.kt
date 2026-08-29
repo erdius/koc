@@ -1,7 +1,9 @@
 package com.erdman.kofc6650
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
@@ -75,6 +77,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
@@ -132,6 +137,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.ImageLoader
 import coil.compose.AsyncImage
@@ -147,9 +153,11 @@ import com.erdman.kofc6650.data.OfflineCache
 import com.erdman.kofc6650.data.PhotoUploadFile
 import com.erdman.kofc6650.data.PinManager
 import com.erdman.kofc6650.data.RecentPhotoDto
+import com.erdman.kofc6650.data.ReminderStore
 import com.erdman.kofc6650.data.RsvpStore
 import com.erdman.kofc6650.data.SignupStatusDto
 import com.erdman.kofc6650.data.WhatsNew
+import com.erdman.kofc6650.notifications.ReminderScheduler
 import com.erdman.kofc6650.ui.theme.KofC6650Theme
 import com.erdman.kofc6650.ui.theme.KofcGold
 import com.erdman.kofc6650.ui.theme.KofcGoldMuted
@@ -423,15 +431,20 @@ fun KofcApp(
                                 Box(
                                     modifier = Modifier
                                         .size(38.dp)
-                                        .background(KofcGold, CircleShape),
+                                        .clip(CircleShape)
+                                        .background(KofcGold, CircleShape)
+                                        .clickable { showJoinKofc = true },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text(text = "K", color = KofcNavy, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    Icon(
+                                        painterResource(R.drawable.ic_qr_code),
+                                        contentDescription = "Join Council 6650 QR code",
+                                        tint = KofcNavy,
+                                        modifier = Modifier.size(22.dp),
+                                    )
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Column(
-                                    modifier = Modifier.clickable { showJoinKofc = true },
-                                ) {
+                                Column {
                                     Text(
                                         text = "Knights of Columbus",
                                         color = KofcGold,
@@ -992,25 +1005,32 @@ private fun RefreshableList(
     }
 }
 
+// Doubles as both the "starred only" filter control and its own legend --
+// tapping anywhere on the row toggles the filter, so there's no separate
+// icon button elsewhere explaining what the star does.
 @Composable
-private fun RsvpLegend() {
+private fun StarredOnlyToggleRow(starredOnly: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onChange(!starredOnly) }
+            .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Filled.Star,
+            if (starredOnly) Icons.Filled.Star else Icons.Outlined.Star,
             contentDescription = null,
-            tint = KofcGoldMuted,
+            tint = if (starredOnly) KofcGold else KofcGoldMuted,
             modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = "Tap the star to track your events",
+            text = if (starredOnly) "Show all events" else "Show only my events",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
-            color = KofcGoldMuted,
+            color = if (starredOnly) KofcGold else KofcGoldMuted,
         )
     }
 }
@@ -1022,26 +1042,39 @@ private fun RsvpLegend() {
 @Composable
 private fun ViewModeIconToggle(pref: com.erdman.kofc6650.data.CalendarViewModePreference) {
     val isMonth = pref.mode == com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
-    IconButton(
-        onClick = {
-            pref.choose(
-                if (isMonth) {
-                    com.erdman.kofc6650.data.CalendarViewModePreference.Mode.AGENDA
-                } else {
-                    com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
-                },
-            )
-        },
+    val tint = if (isMonth) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+    Row(
         modifier = Modifier
-            .size(36.dp)
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (isMonth) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent),
+            .background(if (isMonth) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+            .clickable {
+                pref.choose(
+                    if (isMonth) {
+                        com.erdman.kofc6650.data.CalendarViewModePreference.Mode.AGENDA
+                    } else {
+                        com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
+                    },
+                )
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (isMonth) "Switch to Agenda view" else "Switch to Month view"
+            },
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             Icons.Filled.DateRange,
-            contentDescription = if (isMonth) "Switch to Agenda view" else "Switch to Month view",
-            tint = if (isMonth) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+            contentDescription = null,
+            tint = tint,
             modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "Toggle view",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = tint,
         )
     }
 }
@@ -1294,11 +1327,30 @@ private fun CalendarAgendaTab(
     val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
     val today = LocalDate.now()
     var signupOnly by remember { mutableStateOf(false) }
+    var starredOnly by remember { mutableStateOf(false) }
+    // Reading this subscribes this composable to star-toggle changes on any
+    // card -- RsvpStore.isGoing() itself is a plain SharedPreferences read,
+    // not Compose state, so without this the "starred only" filter below
+    // wouldn't recompose when a different card's star is toggled.
+    val rsvpVersion = com.erdman.kofc6650.data.RsvpStore.currentVersion()
     // What used to be the separate Volunteer Sign Ups tab is now just this
     // filter -- same predicate the repository used to build that tab's
     // event list (getCouncilEvents' signupOnly), applied client-side here
     // instead so it composes with the view mode and search below.
-    val baseEvents = if (signupOnly) events.filter { !it.signupUrl.isNullOrBlank() } else events
+    val signupFilteredEvents = if (signupOnly) events.filter { !it.signupUrl.isNullOrBlank() } else events
+    // "Starred only" is a second, independent filter that composes with the
+    // above for the agenda/month views -- but deliberately NOT for search
+    // results below. Its toggle row is hidden while searching, so a search
+    // silently narrowed by a filter the user can no longer see or turn off
+    // would be confusing (a real event that plainly exists would show "no
+    // results" with no visible explanation why).
+    val baseEvents = remember(signupFilteredEvents, starredOnly, rsvpVersion) {
+        if (starredOnly) {
+            signupFilteredEvents.filter { com.erdman.kofc6650.data.RsvpStore.isGoing(context, it.id) }
+        } else {
+            signupFilteredEvents
+        }
+    }
     val upcoming = baseEvents
         .filter { event ->
             val date = try {
@@ -1360,7 +1412,7 @@ private fun CalendarAgendaTab(
                 EventSearchField(searchQuery) { searchQuery = it }
                 Spacer(modifier = Modifier.height(8.dp))
                 if (!searchActive) {
-                    RsvpLegend()
+                    StarredOnlyToggleRow(starredOnly) { starredOnly = it }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
@@ -1380,7 +1432,7 @@ private fun CalendarAgendaTab(
         }
 
         if (searchActive) {
-            val results = baseEvents.filter { eventMatchesQuery(it, searchQuery) }.sortedBy { it.date }
+            val results = signupFilteredEvents.filter { eventMatchesQuery(it, searchQuery) }.sortedBy { it.date }
             if (results.isEmpty()) {
                 item {
                     Text(
@@ -1401,7 +1453,11 @@ private fun CalendarAgendaTab(
             if (errorMessage == null && upcoming.isEmpty()) {
                 item {
                     Text(
-                        text = "No upcoming events on the calendar.",
+                        text = if (starredOnly) {
+                            "No starred events yet — tap the star on any event to add one."
+                        } else {
+                            "No upcoming events on the calendar."
+                        },
                         color = Color(0xFF999999),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
                     )
@@ -2898,6 +2954,24 @@ private fun EventCard(
     var showAddToCalendarSheet by remember { mutableStateOf(false) }
     var showFeedTheHomelessSheet by remember { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
+    var isReminderArmed by remember(event.id) { mutableStateOf(ReminderStore.isArmed(context, event.id)) }
+    // Starring an event now offers a reminder inline (there's no separate
+    // bell icon anymore) -- shown only when starring (not un-starring) an
+    // event whose reminder trigger is still in the future (keyed on
+    // event.id so a recomposed/reused list slot can't leak this dialog's
+    // confirm action onto a different event).
+    var showReminderPrompt by remember(event.id) { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            isReminderArmed = true
+            ReminderStore.arm(context, event)
+            ReminderScheduler.schedule(context, event)
+        } else {
+            Toast.makeText(context, "Notification permission is needed for event reminders.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Up to 4 dates can be open at once now (Kris opens several months
     // ahead so slower volunteers still get a shot at a future date), so
@@ -3108,8 +3182,29 @@ private fun EventCard(
         IconButton(
             onClick = {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                isGoing = !isGoing
-                RsvpStore.toggle(context, event.id)
+                if (isGoing) {
+                    isGoing = false
+                    RsvpStore.toggle(context, event.id)
+                    // No separate bell icon to manage a reminder once
+                    // un-starred, so un-starring silently cancels it too.
+                    // disarm()/cancel() are both no-ops if nothing was
+                    // armed, so this runs unconditionally rather than
+                    // trusting isReminderArmed to be perfectly in sync.
+                    isReminderArmed = false
+                    ReminderStore.disarm(context, event.id)
+                    ReminderScheduler.cancel(context, event.id)
+                } else {
+                    isGoing = true
+                    RsvpStore.toggle(context, event.id)
+                    // Only offer a reminder if it could actually fire --
+                    // otherwise the dialog promises something the app
+                    // can't deliver (e.g. an event starting in the next
+                    // hour, or a no-time event after its 8am fallback).
+                    val trigger = ReminderScheduler.triggerTime(event.date, event.time)
+                    if (trigger != null && trigger.isAfter(LocalDateTime.now())) {
+                        showReminderPrompt = true
+                    }
+                }
             },
             modifier = Modifier.align(Alignment.TopEnd),
         ) {
@@ -3127,6 +3222,43 @@ private fun EventCard(
                 )
             }
         }
+        }
+
+        if (showReminderPrompt) {
+            AlertDialog(
+                onDismissRequest = { showReminderPrompt = false },
+                title = { Text("Get a reminder?") },
+                text = {
+                    Text(
+                        if (event.time.isNullOrBlank()) {
+                            "Want a reminder the morning of this event?"
+                        } else {
+                            "Want a reminder 1 hour before this event starts?"
+                        },
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showReminderPrompt = false
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            isReminderArmed = true
+                            ReminderStore.arm(context, event)
+                            ReminderScheduler.schedule(context, event)
+                        }
+                    }) {
+                        Text("Yes, remind me")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showReminderPrompt = false }) {
+                        Text("No thanks")
+                    }
+                },
+            )
         }
     }
 }
