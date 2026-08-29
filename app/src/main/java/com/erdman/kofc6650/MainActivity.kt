@@ -1018,7 +1018,21 @@ private fun RsvpLegend() {
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = "Star saves it here. Bell reminds you before it starts.",
+            text = "Save",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = KofcGoldMuted,
+        )
+        Spacer(modifier = Modifier.width(20.dp))
+        Icon(
+            Icons.Filled.Notifications,
+            contentDescription = null,
+            tint = KofcGoldMuted,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "Get Notified",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = KofcGoldMuted,
@@ -1305,11 +1319,26 @@ private fun CalendarAgendaTab(
     val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
     val today = LocalDate.now()
     var signupOnly by remember { mutableStateOf(false) }
+    var starredOnly by remember { mutableStateOf(false) }
+    // Reading this subscribes this composable to star-toggle changes on any
+    // card -- RsvpStore.isGoing() itself is a plain SharedPreferences read,
+    // not Compose state, so without this the "starred only" filter below
+    // wouldn't recompose when a different card's star is toggled.
+    val rsvpVersion = com.erdman.kofc6650.data.RsvpStore.currentVersion()
     // What used to be the separate Volunteer Sign Ups tab is now just this
     // filter -- same predicate the repository used to build that tab's
     // event list (getCouncilEvents' signupOnly), applied client-side here
-    // instead so it composes with the view mode and search below.
-    val baseEvents = if (signupOnly) events.filter { !it.signupUrl.isNullOrBlank() } else events
+    // instead so it composes with the view mode and search below. "Starred
+    // only" is a second, independent filter that composes with it rather
+    // than being folded into the same exclusive All Events/Volunteer choice.
+    val baseEvents = (if (signupOnly) events.filter { !it.signupUrl.isNullOrBlank() } else events)
+        .let { list ->
+            if (starredOnly) {
+                list.filter { com.erdman.kofc6650.data.RsvpStore.isGoing(context, it.id) }
+            } else {
+                list
+            }
+        }
     val upcoming = baseEvents
         .filter { event ->
             val date = try {
@@ -1366,7 +1395,22 @@ private fun CalendarAgendaTab(
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                EventFilterToggle(signupOnly) { signupOnly = it }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        EventFilterToggle(signupOnly) { signupOnly = it }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { starredOnly = !starredOnly },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            if (starredOnly) Icons.Filled.Star else Icons.Outlined.Star,
+                            contentDescription = if (starredOnly) "Showing starred events only" else "Show starred events only",
+                            tint = if (starredOnly) KofcGold else Color(0xFF999999),
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 EventSearchField(searchQuery) { searchQuery = it }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1412,7 +1456,11 @@ private fun CalendarAgendaTab(
             if (errorMessage == null && upcoming.isEmpty()) {
                 item {
                     Text(
-                        text = "No upcoming events on the calendar.",
+                        text = if (starredOnly) {
+                            "No starred events yet — tap the star on any event to add one."
+                        } else {
+                            "No upcoming events on the calendar."
+                        },
                         color = Color(0xFF999999),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
                     )
