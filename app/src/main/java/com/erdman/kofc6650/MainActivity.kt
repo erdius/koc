@@ -77,6 +77,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
@@ -1042,6 +1045,7 @@ private fun ViewModeIconToggle(pref: com.erdman.kofc6650.data.CalendarViewModePr
     val tint = if (isMonth) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
     Row(
         modifier = Modifier
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(10.dp))
             .background(if (isMonth) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
             .clickable {
@@ -1053,7 +1057,10 @@ private fun ViewModeIconToggle(pref: com.erdman.kofc6650.data.CalendarViewModePr
                     },
                 )
             }
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (isMonth) "Switch to Agenda view" else "Switch to Month view"
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
