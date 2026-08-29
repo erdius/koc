@@ -60,8 +60,6 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -1003,39 +1001,32 @@ private fun RefreshableList(
     }
 }
 
+// Doubles as both the "starred only" filter control and its own legend --
+// tapping anywhere on the row toggles the filter, so there's no separate
+// icon button elsewhere explaining what the star does.
 @Composable
-private fun RsvpLegend() {
+private fun StarredOnlyToggleRow(starredOnly: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onChange(!starredOnly) }
+            .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Filled.Star,
+            if (starredOnly) Icons.Filled.Star else Icons.Outlined.Star,
             contentDescription = null,
-            tint = KofcGoldMuted,
+            tint = if (starredOnly) KofcGold else KofcGoldMuted,
             modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = "Save",
+            text = "Show me my events",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
-            color = KofcGoldMuted,
-        )
-        Spacer(modifier = Modifier.width(20.dp))
-        Icon(
-            Icons.Filled.Notifications,
-            contentDescription = null,
-            tint = KofcGoldMuted,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = "Get Notified",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = KofcGoldMuted,
+            color = if (starredOnly) KofcGold else KofcGoldMuted,
         )
     }
 }
@@ -1395,27 +1386,12 @@ private fun CalendarAgendaTab(
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        EventFilterToggle(signupOnly) { signupOnly = it }
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { starredOnly = !starredOnly },
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            if (starredOnly) Icons.Filled.Star else Icons.Outlined.Star,
-                            contentDescription = if (starredOnly) "Showing starred events only" else "Show starred events only",
-                            tint = if (starredOnly) KofcGold else Color(0xFF999999),
-                        )
-                    }
-                }
+                EventFilterToggle(signupOnly) { signupOnly = it }
                 Spacer(modifier = Modifier.height(8.dp))
                 EventSearchField(searchQuery) { searchQuery = it }
                 Spacer(modifier = Modifier.height(8.dp))
                 if (!searchActive) {
-                    RsvpLegend()
+                    StarredOnlyToggleRow(starredOnly) { starredOnly = it }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
@@ -2958,6 +2934,10 @@ private fun EventCard(
     var showFeedTheHomelessSheet by remember { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
     var isReminderArmed by remember(event.id) { mutableStateOf(ReminderStore.isArmed(context, event.id)) }
+    // Starring an event now offers a reminder inline (there's no separate
+    // bell icon anymore) -- shown only when starring (not un-starring) a
+    // today-or-later event.
+    var showReminderPrompt by remember { mutableStateOf(false) }
     val isPastEvent = remember(event.id) {
         val day = try { LocalDate.parse(event.date) } catch (e: Exception) { null }
         day != null && day.isBefore(LocalDate.now())
@@ -3166,36 +3146,6 @@ private fun EventCard(
                 ) {
                     Icon(Icons.Default.DateRange, contentDescription = "Add to My Calendar", tint = KofcGold)
                 }
-                if (!isPastEvent) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(KofcNavy)
-                            .clickable {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                if (isReminderArmed) {
-                                    isReminderArmed = false
-                                    ReminderStore.disarm(context, event.id)
-                                    ReminderScheduler.cancel(context, event.id)
-                                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                } else {
-                                    isReminderArmed = true
-                                    ReminderStore.arm(context, event)
-                                    ReminderScheduler.schedule(context, event)
-                                }
-                            }
-                            .padding(10.dp),
-                    ) {
-                        Icon(
-                            if (isReminderArmed) Icons.Filled.Notifications else Icons.Outlined.Notifications,
-                            contentDescription = if (isReminderArmed) "Reminder set" else "Set a reminder",
-                            tint = KofcGold,
-                        )
-                    }
-                }
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -3213,8 +3163,23 @@ private fun EventCard(
         IconButton(
             onClick = {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                isGoing = !isGoing
-                RsvpStore.toggle(context, event.id)
+                if (isGoing) {
+                    isGoing = false
+                    RsvpStore.toggle(context, event.id)
+                    // No separate bell icon to manage a reminder once
+                    // un-starred, so un-starring silently cancels it too.
+                    if (isReminderArmed) {
+                        isReminderArmed = false
+                        ReminderStore.disarm(context, event.id)
+                        ReminderScheduler.cancel(context, event.id)
+                    }
+                } else {
+                    isGoing = true
+                    RsvpStore.toggle(context, event.id)
+                    if (!isPastEvent) {
+                        showReminderPrompt = true
+                    }
+                }
             },
             modifier = Modifier.align(Alignment.TopEnd),
         ) {
@@ -3232,6 +3197,35 @@ private fun EventCard(
                 )
             }
         }
+        }
+
+        if (showReminderPrompt) {
+            AlertDialog(
+                onDismissRequest = { showReminderPrompt = false },
+                title = { Text("Get a reminder?") },
+                text = { Text("Want a reminder 1 hour before this event starts?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showReminderPrompt = false
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            isReminderArmed = true
+                            ReminderStore.arm(context, event)
+                            ReminderScheduler.schedule(context, event)
+                        }
+                    }) {
+                        Text("Yes, remind me")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showReminderPrompt = false }) {
+                        Text("No thanks")
+                    }
+                },
+            )
         }
     }
 }
