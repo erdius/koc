@@ -1,7 +1,9 @@
 package com.erdman.kofc6650
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
@@ -58,6 +60,8 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -132,6 +136,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.ImageLoader
 import coil.compose.AsyncImage
@@ -147,9 +152,11 @@ import com.erdman.kofc6650.data.OfflineCache
 import com.erdman.kofc6650.data.PhotoUploadFile
 import com.erdman.kofc6650.data.PinManager
 import com.erdman.kofc6650.data.RecentPhotoDto
+import com.erdman.kofc6650.data.ReminderStore
 import com.erdman.kofc6650.data.RsvpStore
 import com.erdman.kofc6650.data.SignupStatusDto
 import com.erdman.kofc6650.data.WhatsNew
+import com.erdman.kofc6650.notifications.ReminderScheduler
 import com.erdman.kofc6650.ui.theme.KofC6650Theme
 import com.erdman.kofc6650.ui.theme.KofcGold
 import com.erdman.kofc6650.ui.theme.KofcGoldMuted
@@ -2898,6 +2905,22 @@ private fun EventCard(
     var showAddToCalendarSheet by remember { mutableStateOf(false) }
     var showFeedTheHomelessSheet by remember { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
+    var isReminderArmed by remember(event.id) { mutableStateOf(ReminderStore.isArmed(context, event.id)) }
+    val isPastEvent = remember(event.id) {
+        val day = try { LocalDate.parse(event.date) } catch (e: Exception) { null }
+        day != null && day.isBefore(LocalDate.now())
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            isReminderArmed = true
+            ReminderStore.arm(context, event)
+            ReminderScheduler.schedule(context, event)
+        } else {
+            Toast.makeText(context, "Notification permission is needed for event reminders.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Up to 4 dates can be open at once now (Kris opens several months
     // ahead so slower volunteers still get a shot at a future date), so
@@ -3090,6 +3113,35 @@ private fun EventCard(
                         .padding(10.dp),
                 ) {
                     Icon(Icons.Default.DateRange, contentDescription = "Add to My Calendar", tint = KofcGold)
+                }
+                if (!isPastEvent) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(KofcNavy)
+                            .clickable {
+                                if (isReminderArmed) {
+                                    isReminderArmed = false
+                                    ReminderStore.disarm(context, event.id)
+                                    ReminderScheduler.cancel(context, event.id)
+                                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    isReminderArmed = true
+                                    ReminderStore.arm(context, event)
+                                    ReminderScheduler.schedule(context, event)
+                                }
+                            }
+                            .padding(10.dp),
+                    ) {
+                        Icon(
+                            if (isReminderArmed) Icons.Filled.Notifications else Icons.Outlined.Notifications,
+                            contentDescription = if (isReminderArmed) "Reminder set" else "Set a reminder",
+                            tint = KofcGold,
+                        )
+                    }
                 }
                 Box(
                     modifier = Modifier
