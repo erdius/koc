@@ -109,9 +109,10 @@ the bell icon's filled/outline state.
 ## iOS scheduling mechanics
 
 - Arming calls `UNUserNotificationCenter.current().requestAuthorization(
-  options: [.alert, .sound])` if not already authorized, then builds a
-  `UNCalendarNotificationTrigger` from the computed date and adds a
-  `UNNotificationRequest` with `identifier = event.id`.
+  options: [.alert, .sound, .badge])` if not already authorized, then
+  builds a `UNCalendarNotificationTrigger` from the computed date and adds
+  a `UNNotificationRequest` with `identifier = event.id` and
+  `content.badge = 1`.
 - Disarming calls
   `removePendingNotificationRequests(withIdentifiers: [event.id])`.
 - No reboot handling needed — the OS persists pending requests across
@@ -120,6 +121,15 @@ the bell icon's filled/outline state.
   calendar-permission flow uses (`EventCardView`'s
   `calendarStatusMessage`) — e.g. "Enable notifications in Settings to get
   reminders." — rather than inventing a new error-messaging pattern.
+- **Badge clearing**: no per-notification read-tracking. `ContentView.swift`
+  already calls `Task { await viewModel.refresh() }` in its
+  `.onChange(of: scenePhase)` handler when the app comes back to the
+  foreground — one line is added alongside it,
+  `UNUserNotificationCenter.current().setBadgeCount(0)`, so the badge
+  clears the instant the app is opened for any reason, not just by tapping
+  the notification itself. Since at most one reminder is ever "pending
+  unseen" in practice, there's no count to reconcile — it's just on (1) or
+  off (0).
 
 ## Notification content & tap behavior
 
@@ -129,6 +139,11 @@ the bell icon's filled/outline state.
 - Tapping the notification just opens the app via standard launch. No
   deep-link to the specific event/tab. Kept minimal deliberately — YAGNI —
   can be revisited later if it turns out to matter in practice.
+- iOS only: app icon shows a badge count of 1 while a fired reminder is
+  unseen (see badge-clearing note under iOS scheduling mechanics).
+  Android has no equivalent numbered badge concept — the OS shows its own
+  unread dot on the icon automatically for any active notification, no app
+  code needed.
 
 ## Edge cases
 
@@ -156,4 +171,5 @@ introduce enough logic to justify adding one. Verification plan:
    -a android.intent.action.BOOT_COMPLETED`) with an armed reminder still
    pending, confirm it re-fires at the right time.
 4. Repeat the arm/fire/cancel check on David's physical iPhone via direct
-   install.
+   install, additionally confirming the badge appears when the reminder
+   fires and clears as soon as the app is opened.
