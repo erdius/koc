@@ -1038,26 +1038,35 @@ private fun StarredOnlyToggleRow(starredOnly: Boolean, onChange: (Boolean) -> Un
 @Composable
 private fun ViewModeIconToggle(pref: com.erdman.kofc6650.data.CalendarViewModePreference) {
     val isMonth = pref.mode == com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
-    IconButton(
-        onClick = {
-            pref.choose(
-                if (isMonth) {
-                    com.erdman.kofc6650.data.CalendarViewModePreference.Mode.AGENDA
-                } else {
-                    com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
-                },
-            )
-        },
+    val tint = if (isMonth) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+    Row(
         modifier = Modifier
-            .size(36.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (isMonth) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent),
+            .background(if (isMonth) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+            .clickable {
+                pref.choose(
+                    if (isMonth) {
+                        com.erdman.kofc6650.data.CalendarViewModePreference.Mode.AGENDA
+                    } else {
+                        com.erdman.kofc6650.data.CalendarViewModePreference.Mode.MONTH
+                    },
+                )
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             Icons.Filled.DateRange,
-            contentDescription = if (isMonth) "Switch to Agenda view" else "Switch to Month view",
-            tint = if (isMonth) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+            contentDescription = null,
+            tint = tint,
             modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "Toggle view",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = tint,
         )
     }
 }
