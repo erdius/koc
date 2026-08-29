@@ -81,26 +81,40 @@ the bell icon's filled/outline state.
   computes the trigger `Instant` per the rule above, builds a
   `PendingIntent` (`requestCode = event.id.hashCode()`) targeting a new
   `ReminderReceiver`, and calls
-  `alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ...)`.
+  `alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ...)`
+  (**inexact**, not `setExactAndAllowWhileIdle`).
   `cancel(context, eventId)` rebuilds the same `PendingIntent` shape and
   calls `alarmManager.cancel(...)`.
+  - **Resolved during planning (was left open above):** exact alarms on
+    API 31+ require either the `SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM`
+    manifest permission — which Play Store policy restricts to apps whose
+    core function is alarms/calendars, a bar this council app doesn't
+    clear — or sending the user to a special "Alarms & reminders" system
+    settings screen to grant it by hand. Both add real Play Store review
+    risk and user-facing friction for a feature that's fundamentally a
+    "sometime in the next several minutes" nudge, not a to-the-second
+    alarm. `setAndAllowWhileIdle` needs no special permission and, for a
+    trigger that's typically an hour or more out, Doze-related delivery
+    slop (typically well under 15 minutes) is immaterial.
 - **New `notifications/ReminderReceiver.kt`** (`BroadcastReceiver`):
   receives the alarm, builds and posts the actual `Notification` via
-  `NotificationManager`, creating the notification channel on first use if
-  it doesn't exist yet (idempotent — no `Application` subclass needed for
+  `NotificationManager` (channel importance `IMPORTANCE_HIGH`, so it
+  actually surfaces as a heads-up banner rather than landing silently in
+  the shade), creating the notification channel on first use if it
+  doesn't exist yet (idempotent — no `Application` subclass needed for
   this, matches the codebase's existing preference for avoiding unnecessary
-  abstraction).
+  abstraction). Uses the framework's built-in
+  `android.R.drawable.ic_popup_reminder` as the status-bar icon rather than
+  adding a new custom asset.
 - **New `notifications/BootRescheduleReceiver.kt`**: registered for
   `android.intent.action.BOOT_COMPLETED`. On boot, reads
   `ReminderStore.allArmed()`, drops any whose computed trigger has already
   passed, and re-arms the rest via `ReminderScheduler.schedule`. Required
   because `AlarmManager` alarms are wiped on reboot but the store survives.
 - **Manifest additions**: `POST_NOTIFICATIONS` (Android 13+ runtime
-  permission), `SCHEDULE_EXACT_ALARM` (or `USE_EXACT_ALARM` depending on
-  target SDK behavior at implementation time — confirm against
-  `compileSdk 35`'s current exact-alarm policy), `RECEIVE_BOOT_COMPLETED`,
-  plus `<receiver>` entries for `ReminderReceiver` and
-  `BootRescheduleReceiver`.
+  permission), `RECEIVE_BOOT_COMPLETED`, plus `<receiver>` entries for
+  `ReminderReceiver` and `BootRescheduleReceiver`. No exact-alarm
+  permission needed (see above).
 - **Permission request**: reuse the exact pattern already used for storage
   permission — `rememberLauncherForActivityResult(
   ActivityResultContracts.RequestPermission())` — triggered the first time
