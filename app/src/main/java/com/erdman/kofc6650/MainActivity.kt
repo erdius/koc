@@ -428,6 +428,7 @@ fun KofcApp(
                                 Box(
                                     modifier = Modifier
                                         .size(38.dp)
+                                        .clip(CircleShape)
                                         .background(KofcGold, CircleShape)
                                         .clickable { showJoinKofc = true },
                                     contentAlignment = Alignment.Center,
