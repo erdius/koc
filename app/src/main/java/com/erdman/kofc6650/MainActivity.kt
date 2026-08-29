@@ -1023,7 +1023,7 @@ private fun StarredOnlyToggleRow(starredOnly: Boolean, onChange: (Boolean) -> Un
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = "Show me my events",
+            text = if (starredOnly) "Show all events" else "Show only my events",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = if (starredOnly) KofcGold else KofcGoldMuted,
