@@ -19,6 +19,10 @@ class ReminderReceiver : BroadcastReceiver() {
         val eventId = intent.getStringExtra(EXTRA_EVENT_ID) ?: return
         val title = intent.getStringExtra(EXTRA_TITLE) ?: return
         val location = intent.getStringExtra(EXTRA_LOCATION)
+        // Defaults true (the "in 1 hour" wording) for a still-pending alarm
+        // scheduled by a version of the app that predates this extra --
+        // closer to correct than assuming the no-time "today" case.
+        val hasTime = intent.getBooleanExtra(EXTRA_HAS_TIME, true)
 
         ensureChannel(context)
 
@@ -32,7 +36,8 @@ class ReminderReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val body = if (location.isNullOrBlank()) "in 1 hour" else "in 1 hour · $location"
+        val whenText = if (hasTime) "in 1 hour" else "today"
+        val body = if (location.isNullOrBlank()) whenText else "$whenText · $location"
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
@@ -57,7 +62,7 @@ class ReminderReceiver : BroadcastReceiver() {
             "Event Reminders",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Reminders for KofC 6650 events you've set a bell for"
+            description = "Reminders for KofC 6650 events you've starred"
         }
         manager.createNotificationChannel(channel)
     }
@@ -67,5 +72,6 @@ class ReminderReceiver : BroadcastReceiver() {
         const val EXTRA_EVENT_ID = "event_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_LOCATION = "location"
+        const val EXTRA_HAS_TIME = "has_time"
     }
 }

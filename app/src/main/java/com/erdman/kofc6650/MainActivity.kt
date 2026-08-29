@@ -1328,17 +1328,21 @@ private fun CalendarAgendaTab(
     // What used to be the separate Volunteer Sign Ups tab is now just this
     // filter -- same predicate the repository used to build that tab's
     // event list (getCouncilEvents' signupOnly), applied client-side here
-    // instead so it composes with the view mode and search below. "Starred
-    // only" is a second, independent filter that composes with it rather
-    // than being folded into the same exclusive All Events/Volunteer choice.
-    val baseEvents = (if (signupOnly) events.filter { !it.signupUrl.isNullOrBlank() } else events)
-        .let { list ->
-            if (starredOnly) {
-                list.filter { com.erdman.kofc6650.data.RsvpStore.isGoing(context, it.id) }
-            } else {
-                list
-            }
+    // instead so it composes with the view mode and search below.
+    val signupFilteredEvents = if (signupOnly) events.filter { !it.signupUrl.isNullOrBlank() } else events
+    // "Starred only" is a second, independent filter that composes with the
+    // above for the agenda/month views -- but deliberately NOT for search
+    // results below. Its toggle row is hidden while searching, so a search
+    // silently narrowed by a filter the user can no longer see or turn off
+    // would be confusing (a real event that plainly exists would show "no
+    // results" with no visible explanation why).
+    val baseEvents = remember(signupFilteredEvents, starredOnly, rsvpVersion) {
+        if (starredOnly) {
+            signupFilteredEvents.filter { com.erdman.kofc6650.data.RsvpStore.isGoing(context, it.id) }
+        } else {
+            signupFilteredEvents
         }
+    }
     val upcoming = baseEvents
         .filter { event ->
             val date = try {
@@ -1420,7 +1424,7 @@ private fun CalendarAgendaTab(
         }
 
         if (searchActive) {
-            val results = baseEvents.filter { eventMatchesQuery(it, searchQuery) }.sortedBy { it.date }
+            val results = signupFilteredEvents.filter { eventMatchesQuery(it, searchQuery) }.sortedBy { it.date }
             if (results.isEmpty()) {
                 item {
                     Text(
@@ -2944,13 +2948,11 @@ private fun EventCard(
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
     var isReminderArmed by remember(event.id) { mutableStateOf(ReminderStore.isArmed(context, event.id)) }
     // Starring an event now offers a reminder inline (there's no separate
-    // bell icon anymore) -- shown only when starring (not un-starring) a
-    // today-or-later event.
-    var showReminderPrompt by remember { mutableStateOf(false) }
-    val isPastEvent = remember(event.id) {
-        val day = try { LocalDate.parse(event.date) } catch (e: Exception) { null }
-        day != null && day.isBefore(LocalDate.now())
-    }
+    // bell icon anymore) -- shown only when starring (not un-starring) an
+    // event whose reminder trigger is still in the future (keyed on
+    // event.id so a recomposed/reused list slot can't leak this dialog's
+    // confirm action onto a different event).
+    var showReminderPrompt by remember(event.id) { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -3177,15 +3179,21 @@ private fun EventCard(
                     RsvpStore.toggle(context, event.id)
                     // No separate bell icon to manage a reminder once
                     // un-starred, so un-starring silently cancels it too.
-                    if (isReminderArmed) {
-                        isReminderArmed = false
-                        ReminderStore.disarm(context, event.id)
-                        ReminderScheduler.cancel(context, event.id)
-                    }
+                    // disarm()/cancel() are both no-ops if nothing was
+                    // armed, so this runs unconditionally rather than
+                    // trusting isReminderArmed to be perfectly in sync.
+                    isReminderArmed = false
+                    ReminderStore.disarm(context, event.id)
+                    ReminderScheduler.cancel(context, event.id)
                 } else {
                     isGoing = true
                     RsvpStore.toggle(context, event.id)
-                    if (!isPastEvent) {
+                    // Only offer a reminder if it could actually fire --
+                    // otherwise the dialog promises something the app
+                    // can't deliver (e.g. an event starting in the next
+                    // hour, or a no-time event after its 8am fallback).
+                    val trigger = ReminderScheduler.triggerTime(event.date, event.time)
+                    if (trigger != null && trigger.isAfter(LocalDateTime.now())) {
                         showReminderPrompt = true
                     }
                 }
@@ -3212,7 +3220,15 @@ private fun EventCard(
             AlertDialog(
                 onDismissRequest = { showReminderPrompt = false },
                 title = { Text("Get a reminder?") },
-                text = { Text("Want a reminder 1 hour before this event starts?") },
+                text = {
+                    Text(
+                        if (event.time.isNullOrBlank()) {
+                            "Want a reminder the morning of this event?"
+                        } else {
+                            "Want a reminder 1 hour before this event starts?"
+                        },
+                    )
+                },
                 confirmButton = {
                     TextButton(onClick = {
                         showReminderPrompt = false

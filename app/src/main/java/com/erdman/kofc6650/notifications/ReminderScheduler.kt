@@ -74,6 +74,7 @@ object ReminderScheduler {
             putExtra(ReminderReceiver.EXTRA_EVENT_ID, eventId)
             putExtra(ReminderReceiver.EXTRA_TITLE, title)
             putExtra(ReminderReceiver.EXTRA_LOCATION, location)
+            putExtra(ReminderReceiver.EXTRA_HAS_TIME, !time.isNullOrBlank())
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
