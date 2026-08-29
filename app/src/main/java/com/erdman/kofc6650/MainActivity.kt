@@ -430,15 +430,19 @@ fun KofcApp(
                                 Box(
                                     modifier = Modifier
                                         .size(38.dp)
-                                        .background(KofcGold, CircleShape),
+                                        .background(KofcGold, CircleShape)
+                                        .clickable { showJoinKofc = true },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text(text = "K", color = KofcNavy, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    Icon(
+                                        painterResource(R.drawable.ic_qr_code),
+                                        contentDescription = "Join Council 6650 QR code",
+                                        tint = KofcNavy,
+                                        modifier = Modifier.size(22.dp),
+                                    )
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Column(
-                                    modifier = Modifier.clickable { showJoinKofc = true },
-                                ) {
+                                Column {
                                     Text(
                                         text = "Knights of Columbus",
                                         color = KofcGold,
