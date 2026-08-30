@@ -895,6 +895,7 @@ git push
 **Files:**
 - Modify: `app/src/main/java/com/erdman/kofc6650kompakt/ui/screens/PinGateScreen.kt`
 - Modify: `app/src/main/java/com/erdman/kofc6650kompakt/ui/dialogs/HeaderDialogs.kt`
+- Modify: `app/src/main/java/com/erdman/kofc6650kompakt/MainActivity.kt` (Step 5's whole-codebase grep found `KofcNavy` still used at 3 lines here — an import plus two `CircularProgressIndicator(color = KofcNavy)` calls for the Calendar/Photos tabs' initial-loading spinners, inside `KofcApp`'s tab-content routing. Task 2 only touched `KofcApp`'s own top-bar/tab-row colors, not these two spinners buried further down in the same function — a plan gap, found during Task 8's own execution. Migrate both to `Color.Black`, matching the identical `CircularProgressIndicator` substitution already used in Tasks 4-7.)
 - Delete: `app/src/main/java/com/erdman/kofc6650kompakt/ui/theme/KofC6650Theme.kt` (transitional color-constants file from Task 2 Step 2 — this task removes its last references)
 
 **Interfaces:**
