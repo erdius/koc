@@ -1394,13 +1394,12 @@ private fun CalendarAgendaTab(
             Column(modifier = Modifier.onGloballyPositioned { headerHeightPx = it.size.height }) {
                 CompositionLocalProvider(LocalDensity provides Density(density = LocalDensity.current.density, fontScale = 1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Spacer(modifier = Modifier.width(40.dp))
                         Text(
                             text = "Upcoming Events",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onBackground,
-                            textAlign = TextAlign.Center,
+                            textAlign = TextAlign.Start,
                             modifier = Modifier.weight(1f),
                         )
                         ViewModeIconToggle(viewModePref)
