@@ -1076,7 +1076,11 @@ adb -s MK20250402537 shell monkey -p com.erdman.kofc6650kompakt -c android.inten
 
 Manually (via the device or `adb shell input tap`) go through: PIN
 gate → Calendar tab (agenda view, month view, search, star an event,
-trigger the reminder prompt, "Add to Calendar") → Minutes tab → Photos
+trigger the reminder prompt, "Add to Calendar", and — if a "Feed the
+Homeless" event with an open date is present at the time — open
+`FeedTheHomelessSignupDialog` too; Task 4's review flagged this
+dialog's button/color conversions as unverified on-device, since
+triggering it depends on live signup data) → Minutes tab → Photos
 tab (both Submit and Recent modes, pinch-zoom viewer) → Payments tab
 (both dialogs) → header QR popup → About dialog → text-size picker →
 Directors/Officers dialog. Screenshot each with `adb -s MK20250402537
