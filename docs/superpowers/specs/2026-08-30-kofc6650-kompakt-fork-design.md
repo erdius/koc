@@ -15,13 +15,22 @@ apps are distributed today.
 
 ## Scope
 
-**In scope**: full feature parity with the phone app —
-- PIN gate (`data/PinManager.kt`)
-- Volunteer Sign Ups tab
-- Calendar tab (agenda view, star/reminder feature)
-- Submit Photos tab
-- Recent Photos tab (grid + pinch-zoom/pan)
-- About screen (version, text-size picker, PIN reset)
+**In scope**: full feature parity with the phone app. The real tab set
+(verified against `MainActivity.kt`, correcting an earlier draft of this
+spec that had the wrong tabs) is:
+- PIN gate (`PinGateScreen`, `data/PinManager.kt`)
+- **Calendar** tab — agenda/month view, search, sign-up filter toggle,
+  star/reminder feature, `EventCard`, `AddToCalendarTimeDialog`,
+  `FeedTheHomelessSignupDialog`
+- **Minutes** tab — Google Drive file list (`MinutesTab`,
+  `MinutesFileCard`)
+- **Photos** tab — submit + recent photos, toggled via
+  `PhotosModeToggle` (`SubmitPhotosTab`, `RecentPhotosTab`, grid +
+  pinch-zoom/pan)
+- **Payments** tab — Dues/Badge payment via PayPal (`PaymentsTab`,
+  `DuesPaymentDialog`, `BadgePaymentDialog`)
+- Header dialogs: `JoinKofcDialog` (QR popup), `AboutDialog`,
+  `WhatsNewDialog`, `DirectorsOfficersDialog`
 - App icon, re-rendered in solid black/white
 
 **Out of scope**:
@@ -94,16 +103,20 @@ The current `MainActivity.kt` is 3,386 lines, and a full e-ink re-theme
 touches nearly all of it. Rather than porting one giant file, split it by
 screen during the port:
 
-- `MainActivity.kt` — `ComponentActivity`, PIN gate, top-level `KofcApp`
+- `MainActivity.kt` — `ComponentActivity`, top-level `KofcApp`
   scaffold/tab routing only
-- `ui/screens/SignUpsScreen.kt`
-- `ui/screens/CalendarScreen.kt` (agenda view, star/reminder UI, view-mode
-  toggle)
-- `ui/screens/SubmitPhotosScreen.kt`
-- `ui/screens/RecentPhotosScreen.kt`
-- `ui/screens/AboutScreen.kt`
-- `ui/components/` — shared pieces (event card, QR popup, reminder dialog,
-  legend/toggle rows) used across screens
+- `ui/screens/PinGateScreen.kt`
+- `ui/screens/CalendarScreen.kt` (agenda/month view, search, sign-up
+  filter, star/reminder UI, `EventCard`, `AddToCalendarTimeDialog`,
+  `FeedTheHomelessSignupDialog`)
+- `ui/screens/MinutesScreen.kt`
+- `ui/screens/PhotosScreen.kt` (`PhotosModeToggle`, submit + recent
+  photos)
+- `ui/screens/PaymentsScreen.kt` (`DuesPaymentDialog`,
+  `BadgePaymentDialog`)
+- `ui/dialogs/HeaderDialogs.kt` — `JoinKofcDialog`, `AboutDialog`,
+  `WhatsNewDialog`, `DirectorsOfficersDialog`
+- `ui/components/` — shared pieces used across screens
 
 ## App icon
 
