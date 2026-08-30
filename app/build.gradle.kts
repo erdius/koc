@@ -19,7 +19,7 @@ android {
         applicationId = "com.erdman.kofc6650"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
+        versionCode = 24
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
