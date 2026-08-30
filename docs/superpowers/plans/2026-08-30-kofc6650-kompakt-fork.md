@@ -673,6 +673,64 @@ git push
 
 ---
 
+### Task 4.5: Re-theme shared components with MMD (plan gap found in Task 4)
+
+**Inserted during execution** — Task 4's implementer found that
+`ui/components/CommonComponents.kt` (produced by Task 3's file split)
+was never assigned its own re-theme task, even though it holds the
+app's *actual* `LazyColumn` call site (inside `RefreshableList`) and is
+used by Calendar, Minutes, and Photos — Task 4 could not do its own
+`LazyColumn` → `LazyColumnMMD` swap because the widget doesn't live in
+`CalendarScreen.kt` at all. This task closes that gap before Tasks 5
+and 6 (Minutes, Photos) also hit it.
+
+**Files:**
+- Modify: `app/src/main/java/com/erdman/kofc6650kompakt/ui/components/CommonComponents.kt`
+
+**Interfaces:**
+- Consumes: `KofC6650KompaktTheme` (Task 2).
+- Produces: same signatures as before (`RefreshableList(...)`,
+  `StarredOnlyToggleRow(starredOnly, onChange)`,
+  `ViewModeIconToggle(pref)`, `EventFilterToggle(signupOnly, onChange)`,
+  `EventSearchField(query, onQueryChange)`, `formatDate(dateStr)`) —
+  called from `CalendarScreen.kt`, `MinutesScreen.kt`,
+  `PhotosScreen.kt` exactly as before.
+
+- [ ] **Step 1: Replace `RefreshableList`'s `LazyColumn` with `LazyColumnMMD`**
+
+Same substitution as Task 4 Step 1 —
+`import com.mudita.mmd.components.lazy.LazyColumnMMD`, swap the
+composable name, keep `state`/`contentPadding`/content lambda as-is.
+
+- [ ] **Step 2: Migrate this file's own `KofcNavy`/`KofcGold`/`KofcGoldMuted` usages**
+
+Same approach as Task 4's color migration: drop the explicit color so
+it inherits `MaterialTheme.colorScheme` from `eInkColorScheme`, or use
+`Color.Black`/`Color.White` directly where a genuinely hardcoded
+monochrome accent makes sense (e.g. `StarredOnlyToggleRow`'s
+starred/not-starred visual distinction).
+
+- [ ] **Step 3: Build, install, and visually verify on the Mudita**
+
+```bash
+./gradlew :app:assembleDebug -q
+adb -s MK20250402537 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s MK20250402537 shell monkey -p com.erdman.kofc6650kompakt -c android.intent.category.LAUNCHER 1
+# Calendar, Minutes, and Photos tabs all render through RefreshableList —
+# check all three still scroll and pull-to-refresh correctly
+adb -s MK20250402537 exec-out screencap -p > /tmp/kompakt-commoncomponents.png
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "Re-theme shared components (RefreshableList, toggles) with MMD"
+git push
+```
+
+---
+
 ### Task 5: Re-theme the Minutes screen with MMD components
 
 **Files:**
