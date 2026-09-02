@@ -1,6 +1,6 @@
-# KofC 6650
+# Council 6650
 
-An Android companion app for Knights of Columbus Council 6650 (Cary & Apex, NC).
+An Android companion app for Council 6650 (Cary & Apex, NC).
 
 ## Features
 

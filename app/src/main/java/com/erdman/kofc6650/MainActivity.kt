@@ -446,13 +446,13 @@ fun KofcApp(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "Knights of Columbus",
+                                        text = "Council 6650",
                                         color = KofcGold,
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                     Text(
-                                        text = "Council 6650 — Cary & Apex, NC",
+                                        text = "Cary & Apex, NC",
                                         color = Color(0xFFAABBCC),
                                         fontSize = 12.sp,
                                     )
@@ -690,11 +690,11 @@ private fun AboutDialog(
                     modifier = Modifier.size(56.dp).background(KofcGold, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = "K", color = KofcNavy, fontWeight = FontWeight.Bold, fontSize = 26.sp)
+                    Text(text = "C", color = KofcNavy, fontWeight = FontWeight.Bold, fontSize = 26.sp)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                Text("Knights of Columbus", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Text("Council 6650 — Cary & Apex, NC", fontSize = 13.sp, color = KofcGoldMuted)
+                Text("Council 6650", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Cary & Apex, NC", fontSize = 13.sp, color = KofcGoldMuted)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
@@ -872,16 +872,16 @@ private fun PinGateScreen(pinManager: PinManager, onOpenUrl: (String) -> Unit) {
             modifier = Modifier.size(56.dp).background(KofcGold, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text = "K", color = KofcNavy, fontWeight = FontWeight.Bold, fontSize = 26.sp)
+            Text(text = "C", color = KofcNavy, fontWeight = FontWeight.Bold, fontSize = 26.sp)
         }
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Knights of Columbus",
+            text = "Council 6650",
             fontSize = 21.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        Text(text = "Council 6650 — Cary & Apex, NC", fontSize = 13.sp, color = KofcGoldMuted)
+        Text(text = "Cary & Apex, NC", fontSize = 13.sp, color = KofcGoldMuted)
 
         Spacer(modifier = Modifier.height(24.dp))
         Text(
@@ -3272,7 +3272,7 @@ private fun reportProblem(context: android.content.Context) {
         ${Build.MANUFACTURER} ${Build.MODEL}
     """.trimIndent()
     val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:bird.dog@erdius.net")).apply {
-        putExtra(Intent.EXTRA_SUBJECT, "KofC 6650 App - Problem Report")
+        putExtra(Intent.EXTRA_SUBJECT, "Council 6650 App - Problem Report")
         putExtra(Intent.EXTRA_TEXT, body)
     }
     try {

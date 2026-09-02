@@ -8,10 +8,8 @@ import android.content.Context
  * app launches after updating to that version.
  */
 object WhatsNew {
-    const val VERSION = "1.1.0"
-    const val CHANGELOG = "• New: tap the star on any event to save it — and optionally get a reminder before it starts\n" +
-        "• New: \"Show only my events\" to filter the list down to what you've starred\n" +
-        "• The header icon now shows a QR code to join the council"
+    const val VERSION = "1.1.1"
+    const val CHANGELOG = "• The app is now named Council 6650, with a new icon and look"
 
     private const val PREFS_NAME = "whats_new"
     private const val KEY_LAST_SEEN = "last_seen_version"

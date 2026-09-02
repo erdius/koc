@@ -62,7 +62,7 @@ class ReminderReceiver : BroadcastReceiver() {
             "Event Reminders",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Reminders for KofC 6650 events you've starred"
+            description = "Reminders for Council 6650 events you've starred"
         }
         manager.createNotificationChannel(channel)
     }

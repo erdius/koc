@@ -3,14 +3,31 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Bold navy "K" monogram, echoing the portal's gold emblem badge. -->
-    <path
-        android:fillColor="#1A2F5E"
-        android:pathData="M36,28 L48,28 L48,80 L36,80 Z" />
-    <path
-        android:fillColor="#1A2F5E"
-        android:pathData="M43.76,49.76 L71.76,21.76 L80.24,30.24 L52.24,58.24 Z" />
-    <path
-        android:fillColor="#1A2F5E"
-        android:pathData="M43.76,58.24 L71.76,86.24 L80.24,77.76 L52.24,49.76 Z" />
+    <!-- Bold gold "6650" wordmark, font-derived path (Arial Bold digits). -->
+    <group
+        android:translateX="22.649"
+        android:translateY="63.957"
+        android:scaleX="0.013763"
+        android:scaleY="-0.013763">
+    <group
+        android:translateX="0"
+        android:translateY="0">
+        <path android:fillColor="#C9A84C" android:pathData="M1039 1107 767 1077Q757 1161 715.0 1201.0Q673 1241 606 1241Q517 1241 455.5 1161.0Q394 1081 378 828Q483 952 639 952Q815 952 940.5 818.0Q1066 684 1066 472Q1066 247 934.0 111.0Q802 -25 595 -25Q373 -25 230.0 147.5Q87 320 87 713Q87 1116 236.0 1294.0Q385 1472 623 1472Q790 1472 899.5 1378.5Q1009 1285 1039 1107ZM402 494Q402 357 465.0 282.5Q528 208 609 208Q687 208 739.0 269.0Q791 330 791 469Q791 612 735.0 678.5Q679 745 595 745Q514 745 458.0 681.5Q402 618 402 494Z" />
+    </group>
+    <group
+        android:translateX="1139"
+        android:translateY="0">
+        <path android:fillColor="#C9A84C" android:pathData="M1039 1107 767 1077Q757 1161 715.0 1201.0Q673 1241 606 1241Q517 1241 455.5 1161.0Q394 1081 378 828Q483 952 639 952Q815 952 940.5 818.0Q1066 684 1066 472Q1066 247 934.0 111.0Q802 -25 595 -25Q373 -25 230.0 147.5Q87 320 87 713Q87 1116 236.0 1294.0Q385 1472 623 1472Q790 1472 899.5 1378.5Q1009 1285 1039 1107ZM402 494Q402 357 465.0 282.5Q528 208 609 208Q687 208 739.0 269.0Q791 330 791 469Q791 612 735.0 678.5Q679 745 595 745Q514 745 458.0 681.5Q402 618 402 494Z" />
+    </group>
+    <group
+        android:translateX="2278"
+        android:translateY="0">
+        <path android:fillColor="#C9A84C" android:pathData="M91 377 371 406Q383 311 442.0 255.5Q501 200 578 200Q666 200 727.0 271.5Q788 343 788 487Q788 622 727.5 689.5Q667 757 570 757Q449 757 353 650L125 683L269 1446H1012V1183H482L438 934Q532 981 630 981Q817 981 947.0 845.0Q1077 709 1077 492Q1077 311 972 169Q829 -25 575 -25Q372 -25 244.0 84.0Q116 193 91 377Z" />
+    </group>
+    <group
+        android:translateX="3417"
+        android:translateY="0">
+        <path android:fillColor="#C9A84C" android:pathData="M562 1472Q775 1472 895 1320Q1038 1140 1038 723Q1038 307 894 125Q775 -25 562 -25Q348 -25 217.0 139.5Q86 304 86 726Q86 1140 230 1322Q349 1472 562 1472ZM562 1239Q511 1239 471.0 1206.5Q431 1174 409 1090Q380 981 380 723Q380 465 406.0 368.5Q432 272 471.5 240.0Q511 208 562 208Q613 208 653.0 240.5Q693 273 715 357Q744 465 744 723Q744 981 718.0 1077.5Q692 1174 652.5 1206.5Q613 1239 562 1239Z" />
+    </group>
+    </group>
 </vector>
