@@ -2132,7 +2132,11 @@ private fun MinutesTab(repository: KofcRepository) {
         isLoading = true
         errorMessage = null
         try {
-            files = repository.getMinutesFiles()
+            files = if (com.erdman.kofc6650.data.ScreenshotMode.isActive(context)) {
+                com.erdman.kofc6650.data.ScreenshotMode.sampleMinutesFiles
+            } else {
+                repository.getMinutesFiles()
+            }
         } catch (e: Exception) {
             errorMessage = "Could not load minutes. Pull down to try again."
         } finally {

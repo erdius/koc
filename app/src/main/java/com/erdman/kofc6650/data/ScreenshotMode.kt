@@ -38,6 +38,17 @@ object ScreenshotMode {
         ),
     )
 
+    val sampleMinutesFiles: List<DriveFileDto> = listOf(
+        DriveFileDto(
+            id = "sample-minutes-1", name = "${futureDate(-30)} Regular Meeting.pdf",
+            mimeType = "application/pdf", webViewLink = "https://drive.google.com/", modifiedTime = null,
+        ),
+        DriveFileDto(
+            id = "sample-minutes-2", name = "${futureDate(-60)} Officers Meeting.pdf",
+            mimeType = "application/pdf", webViewLink = "https://drive.google.com/", modifiedTime = null,
+        ),
+    )
+
     val sampleAllEvents: List<EventDto> = listOf(
         EventDto(
             id = "sample-cal-1", title = "Sample Community Event",
