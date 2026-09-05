@@ -101,6 +101,31 @@ object ReminderScheduler {
     }
 
     /**
+     * Updates a pending reminder's notification content (title/location)
+     * without touching its already-scheduled trigger time.
+     * PendingIntent.FLAG_UPDATE_CURRENT replaces the extras of an existing
+     * pending intent matched by request code in place, so AlarmManager's
+     * existing alarm registration keeps firing at the same time but with
+     * these fresh extras -- used by reconcile() so a cosmetic title/
+     * location change on an unchanged-time event doesn't require touching
+     * (and risking) the alarm's timing at all.
+     */
+    private fun refreshExtras(context: Context, event: EventDto) {
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra(ReminderReceiver.EXTRA_EVENT_ID, event.id)
+            putExtra(ReminderReceiver.EXTRA_TITLE, event.title)
+            putExtra(ReminderReceiver.EXTRA_LOCATION, event.location)
+            putExtra(ReminderReceiver.EXTRA_HAS_TIME, !event.time.isNullOrBlank())
+        }
+        PendingIntent.getBroadcast(
+            context,
+            event.id.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    /**
      * Re-syncs armed reminders against a fresh events fetch -- call after
      * every successful refresh. Nothing else ever cancels/reschedules an
      * alarm when the *council's* calendar changes (only the manual
@@ -111,22 +136,41 @@ object ReminderScheduler {
     fun reconcile(context: Context, freshEvents: List<EventDto>) {
         val freshById = freshEvents.associateBy { it.id }
         for (record in ReminderStore.allArmed(context)) {
-            cancel(context, record.id)
             val event = freshById[record.id]
             if (event == null) {
                 // Gone from the feed (cancelled, or fell outside the fetch
                 // window) -- nothing to remind about, and no card left for
                 // the user to un-star from, so un-star it here instead.
+                cancel(context, record.id)
                 ReminderStore.disarm(context, record.id)
                 RsvpStore.unstar(context, record.id)
                 continue
             }
+            if (event.date == record.date && event.time == record.time) {
+                // Nothing that affects the alarm's trigger changed --
+                // deliberately does NOT cancel/reschedule here. These
+                // alarms are inexact (setAndAllowWhileIdle), so one can be
+                // sitting delayed-but-pending just past its nominal trigger
+                // time; cancelling and re-checking it here would recompute
+                // that same trigger as already passed and disarm a reminder
+                // that was actually about to fire. Still refresh the
+                // pending intent's extras and the stored snapshot in case
+                // title/location changed cosmetically, so the eventual
+                // notification and the store both reflect current data.
+                refreshExtras(context, event)
+                ReminderStore.arm(context, event)
+                continue
+            }
+            // Date/time changed -- the previously scheduled alarm (for the
+            // old time) is stale regardless of whether the new one can be
+            // scheduled, so it needs cancelling either way.
+            cancel(context, record.id)
             if (schedule(context, event)) {
                 ReminderStore.arm(context, event)
             } else {
-                // The event's trigger time (recomputed from its current
-                // date/time) has since passed -- disarm rather than leave
-                // a phantom "armed" record with no alarm behind it.
+                // The event's new trigger time has already passed --
+                // disarm rather than leave a phantom "armed" record with
+                // no alarm behind it.
                 ReminderStore.disarm(context, record.id)
             }
         }

@@ -58,7 +58,9 @@ object NextEventWidgetData {
         } catch (e: Exception) {
             null
         }
-        if (parsed != null && parsed.isBefore(java.time.LocalDate.now())) return null
+        // An unparseable date can't be confirmed as still-upcoming, so treat
+        // it the same as an expired one rather than letting it through.
+        if (parsed == null || parsed.isBefore(java.time.LocalDate.now())) return null
         return NextEventInfo(
             title = title,
             date = rawDate,

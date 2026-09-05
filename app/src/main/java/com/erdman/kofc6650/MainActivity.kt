@@ -1917,14 +1917,17 @@ private fun FeedTheHomelessSignupDialog(initialDate: String, onDismiss: () -> Un
     var signedUp by rememberSaveable { mutableStateOf(false) }
 
     // rememberSaveable so rotating the phone mid-form doesn't wipe a
-    // partially-typed name/email/WhatsApp, and so isSubmitting in
-    // particular can't get reset by a rotation into a state that lets the
-    // user double-submit a real signup slot mid-flight.
+    // partially-typed name/email/WhatsApp.
     var name by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var whatsapp by rememberSaveable { mutableStateOf("") }
     var asAlternate by rememberSaveable { mutableStateOf(false) }
-    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+    // Deliberately plain remember, not rememberSaveable -- a process death
+    // mid-submission would restore this as permanently true (the in-flight
+    // coroutine doing the submission is gone) with nothing left to ever
+    // set it back to false, disabling the button forever. Losing this
+    // transient busy-flag on any recreation is the safer failure mode.
+    var isSubmitting by remember { mutableStateOf(false) }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Without this, checking "Alternate" on one date and then arrowing to
@@ -2494,7 +2497,9 @@ private fun SubmitPhotosTab(repository: KofcRepository, pinManager: PinManager) 
     var selectedUris by rememberSaveable(stateSaver = uriListSaver) { mutableStateOf<List<Uri>>(emptyList()) }
     var submitterName by rememberSaveable { mutableStateOf("") }
     var caption by rememberSaveable { mutableStateOf("") }
-    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+    // Deliberately plain remember, not rememberSaveable -- see the same
+    // note on FeedTheHomelessSignupDialog's isSubmitting.
+    var isSubmitting by remember { mutableStateOf(false) }
     var statusMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var statusIsError by rememberSaveable { mutableStateOf(false) }
 
@@ -2656,10 +2661,18 @@ private fun SubmitPhotosTab(repository: KofcRepository, pinManager: PinManager) 
                                                 selectedUris = emptyList()
                                                 submitterName = ""
                                                 caption = ""
-                                            } else if (result.saved > 0) {
+                                            } else if (result.saved > 0 && result.skipped > 0) {
                                                 statusIsError = true
                                                 statusMessage =
                                                     "Uploaded ${result.saved}, but ${result.skipped} photo${if (result.skipped == 1) "" else "s"} were skipped. Select just the skipped ones to retry."
+                                            } else if (result.saved > 0) {
+                                                // ok=false with none actually skipped -- an
+                                                // ambiguous partial failure the server didn't
+                                                // explain via skipped count, so don't claim a
+                                                // specific skipped photo count that's actually 0.
+                                                statusIsError = true
+                                                statusMessage =
+                                                    "Uploaded ${result.saved}, but the server reported a problem. Please check and try again if needed."
                                             } else {
                                                 statusIsError = true
                                                 statusMessage = "Upload failed -- none of your photos were saved. Please try again."
@@ -2743,6 +2756,13 @@ private fun RecentPhotosTab(
     var archivePhotos by remember { mutableStateOf<List<RecentPhotoDto>>(emptyList()) }
     var isLoadingArchivePhotos by remember { mutableStateOf(false) }
     var archiveError by remember { mutableStateOf(false) }
+    // Bumped on every loadArchivePhotos() call; a call only publishes its
+    // result if it's still the most recent one when it finishes. Without
+    // this, a manual pull-to-refresh of month A that's still in flight when
+    // the user switches to month B could land afterward and overwrite
+    // month B's already-displayed photos/error/loading state with month A's
+    // stale result.
+    var archiveGeneration by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(showMonthPicker) {
         if (showMonthPicker && archiveMonths.isEmpty()) {
@@ -2758,23 +2778,27 @@ private fun RecentPhotosTab(
     }
 
     suspend fun loadArchivePhotos(month: ArchiveMonthDto) {
+        val requestId = ++archiveGeneration
         isLoadingArchivePhotos = true
         archiveError = false
-        // Clear the previous month's photos up front -- otherwise a failed
-        // fetch for the newly selected month left last month's photos on
-        // screen underneath the new month's own heading.
-        archivePhotos = emptyList()
         try {
-            archivePhotos = repository.getArchivedPhotos(month.month)
+            val result = repository.getArchivedPhotos(month.month)
+            if (requestId == archiveGeneration) archivePhotos = result
         } catch (e: Exception) {
-            archiveError = true
+            if (requestId == archiveGeneration) archiveError = true
         } finally {
-            isLoadingArchivePhotos = false
+            if (requestId == archiveGeneration) isLoadingArchivePhotos = false
         }
     }
 
     LaunchedEffect(selectedMonth) {
         val month = selectedMonth ?: return@LaunchedEffect
+        // Clear up front here (a genuine month switch), not inside
+        // loadArchivePhotos() itself -- otherwise a plain pull-to-refresh of
+        // the *same* month (which also calls loadArchivePhotos) blanked the
+        // screen back to "No photos for this month" for a moment on every
+        // refresh instead of just updating in place once the fetch lands.
+        archivePhotos = emptyList()
         loadArchivePhotos(month)
     }
 
@@ -3109,8 +3133,12 @@ private suspend fun savePhotoToGallery(context: android.content.Context, url: St
             wrote
         } catch (e: Exception) {
             // Clean up the inserted row rather than leaving a broken,
-            // image-less MediaStore entry behind after a failure.
-            uri?.let { context.contentResolver.delete(it, null, null) }
+            // image-less MediaStore entry behind after a failure. Wrapped
+            // in runCatching -- delete() itself throwing here would
+            // otherwise escape uncaught (there's no further catch above
+            // this one) and crash the app exactly like the bug this whole
+            // function exists to fix.
+            uri?.let { runCatching { context.contentResolver.delete(it, null, null) } }
             false
         }
     }

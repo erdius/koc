@@ -22,23 +22,25 @@ object PayPalSubmitter {
             .add("hosted_button_id", hostedButtonId)
         fields.forEach { (key, value) -> formBuilder.add(key, value) }
 
-        val submitUrl = "https://www.paypal.com/cgi-bin/webscr"
+        val submitPath = "/cgi-bin/webscr"
         val request = Request.Builder()
-            .url(submitUrl)
+            .url("https://www.paypal.com$submitPath")
             .post(formBuilder.build())
             .build()
 
         client.newCall(request).execute().use { response ->
-            val finalUrl = response.request.url.toString()
+            val finalUrl = response.request.url
             // response.request.url is always *some* URL, even when PayPal
             // rejected the form outright -- a real success redirects away
             // from cgi-bin/webscr to a checkout page, so a non-2xx status
-            // or landing right back on the submit URL both mean the form
-            // was never accepted.
-            if (!response.isSuccessful || finalUrl == submitUrl) {
+            // or landing back on that same script (regardless of query
+            // string -- an error/cancel redirect often keeps the same path
+            // with different params, which a plain full-URL string
+            // comparison would miss) both mean the form was never accepted.
+            if (!response.isSuccessful || finalUrl.encodedPath == submitPath) {
                 throw IOException("PayPal did not return a checkout URL (HTTP ${response.code})")
             }
-            return finalUrl
+            return finalUrl.toString()
         }
     }
 }

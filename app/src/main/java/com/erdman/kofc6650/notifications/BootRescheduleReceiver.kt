@@ -19,8 +19,11 @@ class BootRescheduleReceiver : BroadcastReceiver() {
             val triggerMillis = trigger?.atZone(ReminderScheduler.COUNCIL_ZONE)?.toInstant()?.toEpochMilli()
             if (triggerMillis == null || triggerMillis <= now) {
                 ReminderStore.disarm(context, record.id)
-            } else {
-                ReminderScheduler.schedule(context, record)
+            } else if (!ReminderScheduler.schedule(context, record)) {
+                // Trigger time crossed between the check above and this
+                // call (a narrow race) -- disarm rather than leave a
+                // phantom "armed" record with no alarm behind it.
+                ReminderStore.disarm(context, record.id)
             }
         }
     }
