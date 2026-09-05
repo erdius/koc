@@ -10,8 +10,10 @@ interface GoogleCalendarApi {
         @Path("calendarId") calendarId: String,
         @Query("key") apiKey: String,
         @Query("timeMin") timeMin: String,
+        @Query("timeMax") timeMax: String,
         @Query("singleEvents") singleEvents: Boolean = true,
         @Query("orderBy") orderBy: String = "startTime",
         @Query("maxResults") maxResults: Int = 100,
+        @Query("pageToken") pageToken: String? = null,
     ): CalendarEventsResponse
 }

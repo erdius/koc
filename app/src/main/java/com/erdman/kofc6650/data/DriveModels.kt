@@ -5,6 +5,7 @@ import com.squareup.moshi.JsonClass
 @JsonClass(generateAdapter = true)
 data class DriveFilesResponse(
     val files: List<DriveFileDto> = emptyList(),
+    val nextPageToken: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -105,6 +106,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -139,7 +141,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.erdman.kofc6650.data.ArchiveMonthDto
@@ -221,6 +222,23 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Matches EventDto.time's format (KofcRepository's formatTime uses the same
+// pattern to produce it), so this is the formatter to re-parse it with.
+private val EVENT_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+
+// A handful of ordinary actions (open a map, compose an email, open a link)
+// launch external apps that aren't guaranteed to exist on every device --
+// without this, tapping one on a device with no matching app (no email
+// client, no maps app) throws ActivityNotFoundException and crashes the
+// whole app instead of just failing that one action.
+private fun safeStartActivity(context: android.content.Context, intent: Intent, failureMessage: String = "No app found to handle this action.") {
+    try {
+        context.startActivity(intent)
+    } catch (e: android.content.ActivityNotFoundException) {
+        Toast.makeText(context, failureMessage, Toast.LENGTH_SHORT).show()
+    }
+}
+
 private fun formatDate(dateStr: String): String = try {
     val date = LocalDate.parse(dateStr)
     val dayOfWeek = date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.US)
@@ -245,6 +263,7 @@ private fun updateNextEventWidget(context: android.content.Context, allEvents: L
     val info = next?.let {
         com.erdman.kofc6650.data.NextEventInfo(
             title = it.title,
+            date = it.date,
             dateDisplay = formatDate(it.date),
             time = it.time?.takeIf { t -> t.isNotBlank() },
             location = it.location,
@@ -272,9 +291,15 @@ fun KofcApp(
     // accessibility font size, so it always renders at a fixed size and
     // never overflows the TopAppBar's fixed-width title slot.
     val baseDensity = Density(density = LocalDensity.current.density, fontScale = 1f)
+    // Multiplies onto the device's own accessibility font scale instead of
+    // replacing it -- this used to substitute fontScalePref's multiplier
+    // outright, silently overriding a system-level "larger text"
+    // accessibility setting back down to this app's own default (Normal,
+    // 1x) everywhere, including at the PIN gate before the user can even
+    // reach this preference's own screen to fix it.
     val scaledDensity = Density(
         density = LocalDensity.current.density,
-        fontScale = fontScalePref.preset.multiplier,
+        fontScale = LocalDensity.current.fontScale * fontScalePref.preset.multiplier,
     )
 
     if (!pinManager.isUnlocked) {
@@ -308,6 +333,12 @@ fun KofcApp(
     var photosError by remember { mutableStateOf<String?>(null) }
     var hasNewPhotos by remember { mutableStateOf(false) }
     var feedTheHomelessOpenDates by remember { mutableStateOf<List<SignupStatusDto>?>(null) }
+    // Distinguishes "haven't fetched yet / still loading" (feedTheHomelessOpenDates
+    // still null, statusFailed false) from "fetch failed" (still null, statusFailed
+    // true) -- without this, a permanently failed fetch looked identical to a
+    // slow one, leaving the Feed the Homeless button stuck on "Checking
+    // Status…" forever with no way for the user to retry from that card.
+    var feedTheHomelessStatusFailed by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val offlineCache = remember { OfflineCache(context) }
     // true = Browse, false = Submit -- defaults to Browse since viewing is
@@ -367,6 +398,7 @@ fun KofcApp(
                     val bundle = repository.getCouncilEvents()
                     allEvents = bundle.allEvents
                     offlineCache.saveEvents(bundle.signupEvents, bundle.allEvents)
+                    ReminderScheduler.reconcile(context, bundle.allEvents)
                 } catch (e: Exception) {
                     val cached = offlineCache.loadEvents()
                     if (cached != null) {
@@ -395,7 +427,18 @@ fun KofcApp(
                     }
                 } finally {
                     isLoadingPhotos = false
-                    hasNewPhotos = offlineCache.hasNewPhotos(photos)
+                    if (tabIndex == 2 && photosBrowseMode) {
+                        // Already looking at the Photos tab -- a background
+                        // refresh (resume, pull-to-refresh) landing while
+                        // it's open should mark the new batch seen right
+                        // away, not leave the badge stuck on since the
+                        // tab-switch LaunchedEffect above only fires when
+                        // tabIndex/photosBrowseMode actually change.
+                        offlineCache.markPhotosSeen(photos)
+                        hasNewPhotos = false
+                    } else {
+                        hasNewPhotos = offlineCache.hasNewPhotos(photos)
+                    }
                 }
             }
             launch {
@@ -406,8 +449,9 @@ fun KofcApp(
                 // rather than blocking anything (the signup dialog itself
                 // still fetches its own fresh copy when opened).
                 feedTheHomelessOpenDates = try {
-                    repository.getFeedTheHomelessStatus()
+                    repository.getFeedTheHomelessStatus().also { feedTheHomelessStatusFailed = false }
                 } catch (e: Exception) {
+                    feedTheHomelessStatusFailed = true
                     null
                 }
             }
@@ -548,9 +592,10 @@ fun KofcApp(
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
                     feedTheHomelessOpenDates = feedTheHomelessOpenDates,
+                    feedTheHomelessStatusFailed = feedTheHomelessStatusFailed,
                 )
             } else if (tabIndex == 1) {
-                MinutesTab(repository = repository)
+                MinutesTab(repository = repository, externalRefreshTrigger = refreshTrigger)
             } else if (tabIndex == 2 && photosBrowseMode && isLoadingPhotos && photos.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = KofcNavy)
@@ -790,10 +835,10 @@ private fun DirectorsOfficersDialog(onDismiss: () -> Unit) {
                     contentPadding = PaddingValues(bottom = 32.dp),
                 ) {
                     leadershipSection(title = "Officers", contacts = LeadershipDirectory.officers) { email ->
-                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
+                        safeStartActivity(context, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")), "No email app found.")
                     }
                     leadershipSection(title = "Directors", contacts = LeadershipDirectory.directors) { email ->
-                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
+                        safeStartActivity(context, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")), "No email app found.")
                     }
                 }
             }
@@ -1127,6 +1172,8 @@ private fun LazyListScope.monthCalendarContent(
     onSignUpClick: (String) -> Unit,
     headerHeight: Dp,
     feedTheHomelessOpenDates: List<SignupStatusDto>?,
+    feedTheHomelessStatusFailed: Boolean,
+    onRetryFeedTheHomelessStatus: () -> Unit,
 ) {
     item {
         var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
@@ -1254,9 +1301,18 @@ private fun LazyListScope.monthCalendarContent(
         )
         Spacer(modifier = Modifier.height(8.dp))
 
+        // it.time is the formatted "h:mm a" display string -- sorting it as
+        // plain text puts "10:00 AM" before "9:00 AM" alphabetically.
+        // Re-parsing it back into a LocalTime sorts chronologically instead;
+        // untimed events (blank time) sort first, matching how an all-day
+        // item conventionally reads ahead of the day's timed agenda.
         val selectedDayEvents = events
             .filter { runCatching { LocalDate.parse(it.date) }.getOrNull() == selectedDate }
-            .sortedBy { it.time ?: "" }
+            .sortedBy { event ->
+                event.time?.takeIf { it.isNotBlank() }?.let {
+                    runCatching { LocalTime.parse(it, EVENT_TIME_FORMAT) }.getOrNull()
+                } ?: LocalTime.MIN
+            }
         if (selectedDayEvents.isEmpty()) {
             Text(
                 text = "No events this day.",
@@ -1267,7 +1323,13 @@ private fun LazyListScope.monthCalendarContent(
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 selectedDayEvents.forEach { event ->
-                    EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessOpenDates = feedTheHomelessOpenDates)
+                    EventCard(
+                        event = event,
+                        onSignUpClick = onSignUpClick,
+                        feedTheHomelessOpenDates = feedTheHomelessOpenDates,
+                        feedTheHomelessStatusFailed = feedTheHomelessStatusFailed,
+                        onRetryFeedTheHomelessStatus = onRetryFeedTheHomelessStatus,
+                    )
                 }
             }
         }
@@ -1322,6 +1384,7 @@ private fun CalendarAgendaTab(
     onRefresh: () -> Unit,
     onSignUpClick: (String) -> Unit,
     feedTheHomelessOpenDates: List<SignupStatusDto>?,
+    feedTheHomelessStatusFailed: Boolean,
 ) {
     val context = LocalContext.current
     val viewModePref = remember { com.erdman.kofc6650.data.CalendarViewModePreference(context) }
@@ -1337,7 +1400,15 @@ private fun CalendarAgendaTab(
     // filter -- same predicate the repository used to build that tab's
     // event list (getCouncilEvents' signupOnly), applied client-side here
     // instead so it composes with the view mode and search below.
-    val signupFilteredEvents = if (signupOnly) events.filter { !it.signupUrl.isNullOrBlank() } else events
+    // Feed the Homeless has its own native signup flow instead of a
+    // SignUpGenius link, so it needs to be included here on its own
+    // isFeedTheHomeless flag or it silently vanishes from the very filter
+    // meant to surface volunteering opportunities.
+    val signupFilteredEvents = if (signupOnly) {
+        events.filter { !it.signupUrl.isNullOrBlank() || it.isFeedTheHomeless }
+    } else {
+        events
+    }
     // "Starred only" is a second, independent filter that composes with the
     // above for the agenda/month views -- but deliberately NOT for search
     // results below. Its toggle row is hidden while searching, so a search
@@ -1441,13 +1512,19 @@ private fun CalendarAgendaTab(
                     )
                 }
             } else {
-                items(results) { event ->
-                    EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessOpenDates = feedTheHomelessOpenDates)
+                items(results, key = { it.id }) { event ->
+                    EventCard(
+                        event = event,
+                        onSignUpClick = onSignUpClick,
+                        feedTheHomelessOpenDates = feedTheHomelessOpenDates,
+                        feedTheHomelessStatusFailed = feedTheHomelessStatusFailed,
+                        onRetryFeedTheHomelessStatus = onRefresh,
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         } else if (isMonthMode) {
-            monthCalendarContent(monthViewEvents, onSignUpClick, headerHeight, feedTheHomelessOpenDates)
+            monthCalendarContent(monthViewEvents, onSignUpClick, headerHeight, feedTheHomelessOpenDates, feedTheHomelessStatusFailed, onRefresh)
         } else {
             if (errorMessage == null && upcoming.isEmpty()) {
                 item {
@@ -1463,7 +1540,7 @@ private fun CalendarAgendaTab(
                 }
             }
 
-            eventSections(upcoming, onSignUpClick, feedTheHomelessOpenDates)
+            eventSections(upcoming, onSignUpClick, feedTheHomelessOpenDates, feedTheHomelessStatusFailed, onRefresh)
         }
     }
 }
@@ -1489,6 +1566,8 @@ private fun LazyListScope.eventSections(
     events: List<EventDto>,
     onSignUpClick: (String) -> Unit,
     feedTheHomelessOpenDates: List<SignupStatusDto>?,
+    feedTheHomelessStatusFailed: Boolean,
+    onRetryFeedTheHomelessStatus: () -> Unit,
 ) {
     for (bucketName in listOf("Today", "This Week", "Next Week", "Later", "Past 2 weeks")) {
         val bucketEvents = events.filter { dateBucket(it.date) == bucketName }.sortedBy { it.date }
@@ -1503,8 +1582,14 @@ private fun LazyListScope.eventSections(
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                 )
             }
-            items(bucketEvents) { event ->
-                EventCard(event = event, onSignUpClick = onSignUpClick, feedTheHomelessOpenDates = feedTheHomelessOpenDates)
+            items(bucketEvents, key = { it.id }) { event ->
+                EventCard(
+                    event = event,
+                    onSignUpClick = onSignUpClick,
+                    feedTheHomelessOpenDates = feedTheHomelessOpenDates,
+                    feedTheHomelessStatusFailed = feedTheHomelessStatusFailed,
+                    onRetryFeedTheHomelessStatus = onRetryFeedTheHomelessStatus,
+                )
                 Spacer(modifier = Modifier.height(12.dp))
             }
         }
@@ -1828,15 +1913,27 @@ private fun FeedTheHomelessSignupDialog(initialDate: String, onDismiss: () -> Un
     // soonest one if that date isn't open), with left/right arrows to
     // move between the others when there's more than one.
     var openDates by remember { mutableStateOf<List<SignupStatusDto>>(emptyList()) }
-    var selectedIndex by remember { mutableIntStateOf(0) }
-    var signedUp by remember { mutableStateOf(false) }
+    var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
+    var signedUp by rememberSaveable { mutableStateOf(false) }
 
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var whatsapp by remember { mutableStateOf("") }
-    var asAlternate by remember { mutableStateOf(false) }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    // rememberSaveable so rotating the phone mid-form doesn't wipe a
+    // partially-typed name/email/WhatsApp, and so isSubmitting in
+    // particular can't get reset by a rotation into a state that lets the
+    // user double-submit a real signup slot mid-flight.
+    var name by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var whatsapp by rememberSaveable { mutableStateOf("") }
+    var asAlternate by rememberSaveable { mutableStateOf(false) }
+    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Without this, checking "Alternate" on one date and then arrowing to
+    // another leaves asAlternate=true even though that date's checkbox may
+    // now be hidden (its alternate slot already taken) -- silently
+    // submitting an alternate signup the user never chose for this date.
+    LaunchedEffect(selectedIndex) {
+        asAlternate = false
+    }
 
     suspend fun loadStatus() {
         isLoading = true
@@ -2073,7 +2170,10 @@ private fun FeedTheHomelessSignupDialog(initialDate: String, onDismiss: () -> Un
                                                     null
                                                 }
                                                 latestForDate = latestAll?.firstOrNull { it.date == claimDate }
-                                                if (latestForDate != null && latestForDate.slots.any { it.name == trimmedName }) {
+                                                if (latestForDate != null && latestForDate.slots.any {
+                                                        it.name == trimmedName && (it.label == "Alternate") == asAlternate
+                                                    }
+                                                ) {
                                                     matched = true
                                                     break
                                                 }
@@ -2120,15 +2220,20 @@ private fun FeedTheHomelessSignupDialog(initialDate: String, onDismiss: () -> Un
 // council minutes change on their own schedule, unrelated to
 // events/photos, so there's no reason to couple its fetch to theirs.
 @Composable
-private fun MinutesTab(repository: KofcRepository) {
+private fun MinutesTab(repository: KofcRepository, externalRefreshTrigger: Int) {
     val context = LocalContext.current
     var files by remember { mutableStateOf<List<DriveFileDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // Own counter for this tab's pull-to-refresh gesture, plus the parent's
+    // toolbar-Refresh/foreground-resume trigger -- without also keying on
+    // externalRefreshTrigger, tapping Refresh while on the Minutes tab
+    // silently refetched every *other* tab's data and left Minutes itself
+    // unchanged.
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var showPastYears by remember { mutableStateOf(false) }
 
-    LaunchedEffect(refreshTrigger) {
+    LaunchedEffect(refreshTrigger, externalRefreshTrigger) {
         isLoading = true
         errorMessage = null
         try {
@@ -2373,17 +2478,25 @@ private fun PhotosTab(
     }
 }
 
+// Rotation used to wipe the in-progress submission (selected photos, name,
+// caption) since it all lived in plain remember -- rememberSaveable
+// survives the configuration change that recreates this composable.
+private val uriListSaver = androidx.compose.runtime.saveable.listSaver<List<Uri>, String>(
+    save = { it.map(Uri::toString) },
+    restore = { it.map(Uri::parse) },
+)
+
 @Composable
 private fun SubmitPhotosTab(repository: KofcRepository, pinManager: PinManager) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var submitterName by remember { mutableStateOf("") }
-    var caption by remember { mutableStateOf("") }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
-    var statusIsError by remember { mutableStateOf(false) }
+    var selectedUris by rememberSaveable(stateSaver = uriListSaver) { mutableStateOf<List<Uri>>(emptyList()) }
+    var submitterName by rememberSaveable { mutableStateOf("") }
+    var caption by rememberSaveable { mutableStateOf("") }
+    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+    var statusMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var statusIsError by rememberSaveable { mutableStateOf(false) }
 
     val pickPhotosLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20),
@@ -2506,16 +2619,23 @@ private fun SubmitPhotosTab(repository: KofcRepository, pinManager: PinManager) 
                                     statusMessage = null
                                     scope.launch {
                                         try {
-                                            val files = selectedUris.mapIndexedNotNull { index, uri ->
-                                                val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
-                                                val bytes = context.contentResolver.openInputStream(uri)
-                                                    ?.use { it.readBytes() }
-                                                bytes?.let {
-                                                    PhotoUploadFile(
-                                                        bytes = it,
-                                                        filename = "photo_$index.${mimeType.substringAfter('/').ifBlank { "jpg" }}",
-                                                        mimeType = mimeType,
-                                                    )
+                                            // Reading up to 20 full-resolution images into
+                                            // memory is real I/O work -- rememberCoroutineScope()
+                                            // defaults to the main dispatcher, so without this
+                                            // the reads (and the network call) block the UI
+                                            // thread and can ANR.
+                                            val files = withContext(Dispatchers.IO) {
+                                                selectedUris.mapIndexedNotNull { index, uri ->
+                                                    val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+                                                    val bytes = context.contentResolver.openInputStream(uri)
+                                                        ?.use { it.readBytes() }
+                                                    bytes?.let {
+                                                        PhotoUploadFile(
+                                                            bytes = it,
+                                                            filename = "photo_$index.${mimeType.substringAfter('/').ifBlank { "jpg" }}",
+                                                            mimeType = mimeType,
+                                                        )
+                                                    }
                                                 }
                                             }
                                             val result = repository.uploadPhotos(
@@ -2524,12 +2644,26 @@ private fun SubmitPhotosTab(repository: KofcRepository, pinManager: PinManager) 
                                                 caption,
                                                 files,
                                             )
-                                            statusIsError = false
-                                            statusMessage =
-                                                "Uploaded ${result.saved} photo${if (result.saved == 1) "" else "s"}. Thank you!"
-                                            selectedUris = emptyList()
-                                            submitterName = ""
-                                            caption = ""
+                                            // The server can report ok=false or skip individual
+                                            // photos even on a 2xx HTTP response -- showing a
+                                            // blanket "thank you" and clearing the whole
+                                            // selection regardless used to silently drop those
+                                            // without telling the user or letting them retry.
+                                            if (result.ok && result.skipped == 0) {
+                                                statusIsError = false
+                                                statusMessage =
+                                                    "Uploaded ${result.saved} photo${if (result.saved == 1) "" else "s"}. Thank you!"
+                                                selectedUris = emptyList()
+                                                submitterName = ""
+                                                caption = ""
+                                            } else if (result.saved > 0) {
+                                                statusIsError = true
+                                                statusMessage =
+                                                    "Uploaded ${result.saved}, but ${result.skipped} photo${if (result.skipped == 1) "" else "s"} were skipped. Select just the skipped ones to retry."
+                                            } else {
+                                                statusIsError = true
+                                                statusMessage = "Upload failed -- none of your photos were saved. Please try again."
+                                            }
                                         } catch (e: Exception) {
                                             statusIsError = true
                                             statusMessage = e.message ?: "Something went wrong"
@@ -2623,10 +2757,13 @@ private fun RecentPhotosTab(
         }
     }
 
-    LaunchedEffect(selectedMonth) {
-        val month = selectedMonth ?: return@LaunchedEffect
+    suspend fun loadArchivePhotos(month: ArchiveMonthDto) {
         isLoadingArchivePhotos = true
         archiveError = false
+        // Clear the previous month's photos up front -- otherwise a failed
+        // fetch for the newly selected month left last month's photos on
+        // screen underneath the new month's own heading.
+        archivePhotos = emptyList()
         try {
             archivePhotos = repository.getArchivedPhotos(month.month)
         } catch (e: Exception) {
@@ -2634,6 +2771,11 @@ private fun RecentPhotosTab(
         } finally {
             isLoadingArchivePhotos = false
         }
+    }
+
+    LaunchedEffect(selectedMonth) {
+        val month = selectedMonth ?: return@LaunchedEffect
+        loadArchivePhotos(month)
     }
 
     val viewingArchive = selectedMonth != null
@@ -2650,8 +2792,18 @@ private fun RecentPhotosTab(
     }
 
     RefreshableList(
-        isRefreshing = isRefreshing,
-        onRefresh = onRefresh,
+        isRefreshing = if (viewingArchive) isLoadingArchivePhotos else isRefreshing,
+        // Pulling to refresh while browsing an archived month used to
+        // silently refetch the *current* month's photos instead (onRefresh
+        // is KofcApp's current-month refresh) -- retry the displayed
+        // archived month instead when one is selected.
+        onRefresh = {
+            if (viewingArchive) {
+                selectedMonth?.let { month -> scope.launch { loadArchivePhotos(month) } }
+            } else {
+                onRefresh()
+            }
+        },
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 32.dp),
     ) {
         item {
@@ -2799,7 +2951,11 @@ private fun RecentPhotosTab(
                         CircularProgressIndicator(color = KofcNavy)
                     }
                     archiveMonths.isEmpty() -> Text("No archived photos yet.", color = Color(0xFF999999))
-                    else -> Column {
+                    // Capped height + verticalScroll -- an AlertDialog's content
+                    // doesn't scroll on its own, so once the archive grows past
+                    // a few months the list used to clip with no way to reach
+                    // the rest.
+                    else -> Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
                         archiveMonths.forEach { month ->
                             TextButton(
                                 onClick = {
@@ -2887,7 +3043,10 @@ private fun RecentPhotosTab(
 }
 
 private suspend fun loadBitmap(context: android.content.Context, url: String): Bitmap? {
-    val loader = ImageLoader(context)
+    // Reuses AsyncImage's own shared singleton loader (and its memory
+    // cache) instead of standing up a brand new ImageLoader -- and its
+    // disk/connection pool -- on every save/share tap.
+    val loader = coil.Coil.imageLoader(context)
     val request = ImageRequest.Builder(context).data(url).allowHardware(false).build()
     val result = (loader.execute(request).drawable as? BitmapDrawable)?.bitmap
     return result
@@ -2895,22 +3054,29 @@ private suspend fun loadBitmap(context: android.content.Context, url: String): B
 
 private fun sharePhoto(context: android.content.Context, scope: kotlinx.coroutines.CoroutineScope, url: String) {
     scope.launch {
-        val bitmap = loadBitmap(context, url) ?: run {
-            Toast.makeText(context, "Couldn't load this photo.", Toast.LENGTH_SHORT).show()
-            return@launch
+        try {
+            val bitmap = loadBitmap(context, url) ?: run {
+                Toast.makeText(context, "Couldn't load this photo.", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val uri = withContext(Dispatchers.IO) {
+                val dir = File(context.cacheDir, "shared_images").apply { mkdirs() }
+                val file = File(dir, "photo_${System.currentTimeMillis()}.jpg")
+                FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out) }
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            }
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/jpeg"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            safeStartActivity(context, Intent.createChooser(intent, "Share Photo"))
+        } catch (e: Exception) {
+            // A full cache volume or similar filesystem failure used to
+            // throw here uncaught, inside a bare scope.launch with no
+            // handler -- crashing the app instead of just failing the share.
+            Toast.makeText(context, "Couldn't share this photo.", Toast.LENGTH_SHORT).show()
         }
-        val uri = withContext(Dispatchers.IO) {
-            val dir = File(context.cacheDir, "shared_images").apply { mkdirs() }
-            val file = File(dir, "photo_${System.currentTimeMillis()}.jpg")
-            FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out) }
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        }
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "image/jpeg"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(Intent.createChooser(intent, "Share Photo"))
     }
 }
 
@@ -2920,6 +3086,7 @@ private suspend fun savePhotoToGallery(context: android.content.Context, url: St
         return
     }
     val saved = withContext(Dispatchers.IO) {
+        var uri: Uri? = null
         try {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, "koc6650_${System.currentTimeMillis()}.jpg")
@@ -2928,13 +3095,22 @@ private suspend fun savePhotoToGallery(context: android.content.Context, url: St
                     put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/KofC6650")
                 }
             }
-            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: return@withContext false
-            context.contentResolver.openOutputStream(uri)?.use { out ->
+            // A null stream or a false compress() result both used to fall
+            // through to "saved" -- reporting success for an empty or
+            // truncated MediaStore entry with no image data behind it.
+            val wrote = context.contentResolver.openOutputStream(uri)?.use { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            } ?: false
+            if (!wrote) {
+                context.contentResolver.delete(uri, null, null)
             }
-            true
+            wrote
         } catch (e: Exception) {
+            // Clean up the inserted row rather than leaving a broken,
+            // image-less MediaStore entry behind after a failure.
+            uri?.let { context.contentResolver.delete(it, null, null) }
             false
         }
     }
@@ -2951,11 +3127,18 @@ private fun EventCard(
     event: EventDto,
     onSignUpClick: (String) -> Unit,
     feedTheHomelessOpenDates: List<SignupStatusDto>? = null,
+    feedTheHomelessStatusFailed: Boolean = false,
+    onRetryFeedTheHomelessStatus: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    var showAddToCalendarSheet by remember { mutableStateOf(false) }
-    var showFeedTheHomelessSheet by remember { mutableStateOf(false) }
+    // Keyed on event.id like the other per-card state below -- Compose
+    // reuses a LazyColumn slot's remembered state by position, not by
+    // identity, when items are inserted/removed above it. Without the key,
+    // a dialog left open through such a refresh could end up attached to
+    // whatever event now occupies that slot instead of the one that opened it.
+    var showAddToCalendarSheet by remember(event.id) { mutableStateOf(false) }
+    var showFeedTheHomelessSheet by remember(event.id) { mutableStateOf(false) }
     var isGoing by remember(event.id) { mutableStateOf(RsvpStore.isGoing(context, event.id)) }
     var isReminderArmed by remember(event.id) { mutableStateOf(ReminderStore.isArmed(context, event.id)) }
     // Starring an event now offers a reminder inline (there's no separate
@@ -2968,9 +3151,12 @@ private fun EventCard(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            isReminderArmed = true
-            ReminderStore.arm(context, event)
-            ReminderScheduler.schedule(context, event)
+            if (ReminderScheduler.schedule(context, event)) {
+                isReminderArmed = true
+                ReminderStore.arm(context, event)
+            } else {
+                Toast.makeText(context, "That event's reminder time has already passed.", Toast.LENGTH_SHORT).show()
+            }
         } else {
             Toast.makeText(context, "Notification permission is needed for event reminders.", Toast.LENGTH_SHORT).show()
         }
@@ -3119,10 +3305,18 @@ private fun EventCard(
                     // Treating "still unknown" the same as "not open" avoids
                     // ever showing a button that looks tappable-and-open before
                     // that's actually confirmed.
-                    val notReady = feedTheHomelessOpenDates == null
-                    val notOpenYet = !notReady && !isFeedTheHomelessOpenForThisDate
+                    val notReady = feedTheHomelessOpenDates == null && !feedTheHomelessStatusFailed
+                    val notOpenYet = feedTheHomelessOpenDates != null && !isFeedTheHomelessOpenForThisDate
+                    // A permanently-failed fetch looks identical to "still
+                    // loading" if left as feedTheHomelessOpenDates == null --
+                    // that used to leave this button disabled forever with
+                    // no way to retry. Now a failure re-enables it as
+                    // "Retry", which re-runs the same top-level refresh that
+                    // re-fetches this status (among everything else).
                     Button(
-                        onClick = { showFeedTheHomelessSheet = true },
+                        onClick = {
+                            if (feedTheHomelessStatusFailed) onRetryFeedTheHomelessStatus() else showFeedTheHomelessSheet = true
+                        },
                         enabled = !notReady && !notOpenYet,
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                             containerColor = KofcNavy,
@@ -3132,6 +3326,7 @@ private fun EventCard(
                         Text(
                             when {
                                 notReady -> "Checking Status…"
+                                feedTheHomelessStatusFailed -> "Retry"
                                 notOpenYet -> "Not Open Yet"
                                 isFeedTheHomelessFull -> "View Signups"
                                 else -> "Sign Up to Volunteer →"
@@ -3248,9 +3443,12 @@ private fun EventCard(
                         ) {
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         } else {
-                            isReminderArmed = true
-                            ReminderStore.arm(context, event)
-                            ReminderScheduler.schedule(context, event)
+                            if (ReminderScheduler.schedule(context, event)) {
+                                isReminderArmed = true
+                                ReminderStore.arm(context, event)
+                            } else {
+                                Toast.makeText(context, "That event's reminder time has already passed.", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }) {
                         Text("Yes, remind me")
@@ -3279,16 +3477,12 @@ private fun reportProblem(context: android.content.Context) {
         putExtra(Intent.EXTRA_SUBJECT, "Council 6650 App - Problem Report")
         putExtra(Intent.EXTRA_TEXT, body)
     }
-    try {
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        // No email app available to handle the intent; nothing to do.
-    }
+    safeStartActivity(context, intent, "No email app found.")
 }
 
 private fun openLocationInMaps(context: android.content.Context, location: String) {
     val uri = Uri.parse("geo:0,0?q=" + Uri.encode(location))
-    context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+    safeStartActivity(context, Intent(Intent.ACTION_VIEW, uri), "No maps app found.")
 }
 
 private fun shareEvent(context: android.content.Context, event: EventDto) {
@@ -3305,7 +3499,7 @@ private fun shareEvent(context: android.content.Context, event: EventDto) {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, lines.joinToString("\n"))
     }
-    context.startActivity(Intent.createChooser(intent, "Share Event"))
+    safeStartActivity(context, Intent.createChooser(intent, "Share Event"))
 }
 
 // Events default to a 1-hour block -- long enough to be useful on the
@@ -3319,7 +3513,11 @@ private fun addEventToCalendar(context: android.content.Context, event: EventDto
     }
 
     val start = LocalDateTime.of(date, LocalTime.of(hour, minute))
-    val startMillis = start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    // event.time (and this dialog's chosen hour/minute default) is the
+    // council's own wall-clock time, not the device's -- see
+    // ReminderScheduler.COUNCIL_ZONE. Using the device zone here shifted
+    // the calendar entry by the gap between the two zones.
+    val startMillis = start.atZone(ReminderScheduler.COUNCIL_ZONE).toInstant().toEpochMilli()
 
     val intent = Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
         .putExtra(CalendarContract.Events.TITLE, event.title)
@@ -3328,11 +3526,7 @@ private fun addEventToCalendar(context: android.content.Context, event: EventDto
         .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
         .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startMillis + 60 * 60 * 1000)
 
-    try {
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        // No calendar app available to handle the intent; nothing to do.
-    }
+    safeStartActivity(context, intent, "No calendar app found.")
 }
 
 // SignUpGenius events often offer several time slots (setup, serving,

@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.erdman.kofc6650.data.ReminderStore
-import java.time.ZoneId
 
 /**
  * AlarmManager alarms are wiped on reboot; this reads every armed
@@ -17,7 +16,7 @@ class BootRescheduleReceiver : BroadcastReceiver() {
         val now = System.currentTimeMillis()
         for (record in ReminderStore.allArmed(context)) {
             val trigger = ReminderScheduler.triggerTime(record.date, record.time)
-            val triggerMillis = trigger?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+            val triggerMillis = trigger?.atZone(ReminderScheduler.COUNCIL_ZONE)?.toInstant()?.toEpochMilli()
             if (triggerMillis == null || triggerMillis <= now) {
                 ReminderStore.disarm(context, record.id)
             } else {

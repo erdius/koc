@@ -35,5 +35,17 @@ object RsvpStore {
         version++
     }
 
+    /** Unconditional removal, unlike toggle -- used by
+     *  ReminderScheduler.reconcile so a concurrent state change elsewhere
+     *  can't make it flip a still-starred event back *on*. */
+    fun unstar(context: Context, eventId: String) {
+        val p = prefs(context)
+        val current = HashSet(p.getStringSet(KEY_EVENT_IDS, emptySet()) ?: emptySet())
+        if (current.remove(eventId)) {
+            p.edit().putStringSet(KEY_EVENT_IDS, current).apply()
+            version++
+        }
+    }
+
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 }

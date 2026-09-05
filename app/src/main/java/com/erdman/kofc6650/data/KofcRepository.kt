@@ -92,7 +92,14 @@ class KofcRepository {
     // current minutes only, not a full file browser.
     suspend fun getMinutesFiles(): List<DriveFileDto> {
         val query = "'$MINUTES_FOLDER_ID' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false"
-        return driveApi.listFiles(query = query, apiKey = API_KEY).files
+        val allFiles = mutableListOf<DriveFileDto>()
+        var pageToken: String? = null
+        do {
+            val response = driveApi.listFiles(query = query, apiKey = API_KEY, pageToken = pageToken)
+            allFiles += response.files
+            pageToken = response.nextPageToken
+        } while (pageToken != null)
+        return allFiles
     }
 
     suspend fun claimFeedTheHomelessSlot(date: String, name: String, email: String, whatsapp: String, asAlternate: Boolean) {
@@ -161,12 +168,31 @@ class KofcRepository {
         // still filter down to today-or-later themselves in MainActivity.kt.
         val timeMin = LocalDate.now().minusDays(14).atStartOfDay(ZoneId.systemDefault())
             .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-        val response = api.getEvents(
-            calendarId = CALENDAR_ID,
-            apiKey = API_KEY,
-            timeMin = timeMin,
-        )
-        return response.items
+        // Without a bound, singleEvents=true expands recurring events with
+        // no end date (e.g. the council's weekly Zoom Rosary) indefinitely
+        // -- verified against the live calendar, page 30 (3000 events) was
+        // still returning nextPageToken and had reached the year 2044.
+        // Fetching that many pages sequentially is what made loading slow
+        // and occasionally fail outright; a year out is far more than any
+        // screen in the app actually needs.
+        val timeMax = LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+
+        val allItems = mutableListOf<CalendarEventDto>()
+        var pageToken: String? = null
+        do {
+            val response = api.getEvents(
+                calendarId = CALENDAR_ID,
+                apiKey = API_KEY,
+                timeMin = timeMin,
+                timeMax = timeMax,
+                pageToken = pageToken,
+            )
+            allItems += response.items
+            pageToken = response.nextPageToken
+        } while (pageToken != null)
+
+        return allItems
             .asSequence()
             .filter { it.status != "cancelled" }
             .mapNotNull { toEventDto(it) }
@@ -182,15 +208,17 @@ class KofcRepository {
         // sign ups", so they're kept out of signupUrl (which drives the
         // Volunteer Sign Ups tab filter) and surfaced separately instead.
         val linkUrl = if (signupUrl == null) extractGenericUrl(event.description) else null
+        val title = event.summary ?: "Untitled"
         return EventDto(
             id = event.id,
-            title = event.summary ?: "Untitled",
+            title = title,
             date = date,
             time = time,
             location = event.location,
             description = cleanDescription(event.description),
             signupUrl = signupUrl,
             linkUrl = linkUrl,
+            isFeedTheHomeless = title == "Feed the Homeless",
         )
     }
 
@@ -215,7 +243,11 @@ class KofcRepository {
             Regex("""https?://(?:www\.)?signupgenius\.com/[^\s<>"']*""", RegexOption.IGNORE_CASE)
         private val BR_TAG_REGEX = Regex("<br\\s*/?>", RegexOption.IGNORE_CASE)
         private val HTML_TAG_REGEX = Regex("<[^>]+>")
-        private val BARE_URL_REGEX = Regex("""https?://\S+""")
+        // Excludes quote/angle-bracket characters (matching SIGNUP_URL_REGEX's
+        // exclusion set) -- this runs on the raw, still-HTML description, so
+        // an unescaped "\S+" swallows a following `">Join Zoom</a>` straight
+        // into the extracted URL for any link with no whitespace before its tag.
+        private val BARE_URL_REGEX = Regex("""https?://[^\s<>"']+""")
         private val EXTRA_BLANK_LINES_REGEX = Regex("\n{3,}")
 
         private fun extractSignupUrl(text: String?): String? {

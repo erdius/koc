@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import com.erdman.kofc6650.data.EventDto
 import com.erdman.kofc6650.data.ReminderRecord
+import com.erdman.kofc6650.data.ReminderStore
+import com.erdman.kofc6650.data.RsvpStore
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -25,6 +27,15 @@ import java.util.Locale
 object ReminderScheduler {
     private const val LEAD_TIME_HOURS = 1L
     private val TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+
+    // Event times are the council's own wall-clock time (KofcRepository's
+    // formatTime extracts "6:00 PM" straight from the source's ISO offset,
+    // not converted to the device's timezone), so combining them into an
+    // absolute instant must anchor to the council's actual timezone rather
+    // than whatever timezone the device happens to be in -- otherwise a
+    // 6pm Eastern event becomes 6pm Pacific on a Pacific-configured phone,
+    // three hours off from the real event time.
+    val COUNCIL_ZONE: ZoneId = ZoneId.of("America/New_York")
 
     /** Null if date can't be parsed. Public so BootRescheduleReceiver can
      *  recompute a stored record's trigger to decide whether it already
@@ -49,13 +60,16 @@ object ReminderScheduler {
         }
     }
 
-    fun schedule(context: Context, event: EventDto) {
+    /** Returns whether an alarm was actually scheduled -- false (a silent
+     *  no-op) when the date can't be parsed or the trigger has already
+     *  passed. Callers must check this before recording the reminder as
+     *  armed, otherwise a UI/store race with schedule()'s own timing check
+     *  can mark something armed that never actually got an alarm. */
+    fun schedule(context: Context, event: EventDto): Boolean =
         schedule(context, event.id, event.date, event.time, event.title, event.location)
-    }
 
-    fun schedule(context: Context, record: ReminderRecord) {
+    fun schedule(context: Context, record: ReminderRecord): Boolean =
         schedule(context, record.id, record.date, record.time, record.title, record.location)
-    }
 
     private fun schedule(
         context: Context,
@@ -64,10 +78,10 @@ object ReminderScheduler {
         time: String?,
         title: String,
         location: String?,
-    ) {
-        val trigger = triggerTime(date, time) ?: return
-        val triggerMillis = trigger.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        if (triggerMillis <= System.currentTimeMillis()) return
+    ): Boolean {
+        val trigger = triggerTime(date, time) ?: return false
+        val triggerMillis = trigger.atZone(COUNCIL_ZONE).toInstant().toEpochMilli()
+        if (triggerMillis <= System.currentTimeMillis()) return false
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, ReminderReceiver::class.java).apply {
@@ -83,6 +97,39 @@ object ReminderScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pendingIntent)
+        return true
+    }
+
+    /**
+     * Re-syncs armed reminders against a fresh events fetch -- call after
+     * every successful refresh. Nothing else ever cancels/reschedules an
+     * alarm when the *council's* calendar changes (only the manual
+     * un-star action cancels one), so without this, an event that gets
+     * cancelled or rescheduled upstream leaves a stale alarm armed with no
+     * card left in the feed to un-star it from.
+     */
+    fun reconcile(context: Context, freshEvents: List<EventDto>) {
+        val freshById = freshEvents.associateBy { it.id }
+        for (record in ReminderStore.allArmed(context)) {
+            cancel(context, record.id)
+            val event = freshById[record.id]
+            if (event == null) {
+                // Gone from the feed (cancelled, or fell outside the fetch
+                // window) -- nothing to remind about, and no card left for
+                // the user to un-star from, so un-star it here instead.
+                ReminderStore.disarm(context, record.id)
+                RsvpStore.unstar(context, record.id)
+                continue
+            }
+            if (schedule(context, event)) {
+                ReminderStore.arm(context, event)
+            } else {
+                // The event's trigger time (recomputed from its current
+                // date/time) has since passed -- disarm rather than leave
+                // a phantom "armed" record with no alarm behind it.
+                ReminderStore.disarm(context, record.id)
+            }
+        }
     }
 
     fun cancel(context: Context, eventId: String) {

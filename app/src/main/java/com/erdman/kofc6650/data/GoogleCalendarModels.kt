@@ -5,6 +5,7 @@ import com.squareup.moshi.JsonClass
 @JsonClass(generateAdapter = true)
 data class CalendarEventsResponse(
     val items: List<CalendarEventDto> = emptyList(),
+    val nextPageToken: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

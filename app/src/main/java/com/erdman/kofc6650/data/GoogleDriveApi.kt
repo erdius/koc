@@ -8,8 +8,9 @@ interface GoogleDriveApi {
     suspend fun listFiles(
         @Query("q") query: String,
         @Query("key") apiKey: String,
-        @Query("fields") fields: String = "files(id,name,mimeType,webViewLink,modifiedTime)",
+        @Query("fields") fields: String = "nextPageToken,files(id,name,mimeType,webViewLink,modifiedTime)",
         @Query("orderBy") orderBy: String = "name desc",
         @Query("pageSize") pageSize: Int = 100,
+        @Query("pageToken") pageToken: String? = null,
     ): DriveFilesResponse
 }

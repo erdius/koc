@@ -9,6 +9,7 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.erdman.kofc6650.MainActivity
+import com.erdman.kofc6650.data.ReminderStore
 
 /**
  * Fires when an armed reminder's AlarmManager alarm goes off; builds and
@@ -52,6 +53,12 @@ class ReminderReceiver : BroadcastReceiver() {
         } catch (e: SecurityException) {
             // Notification permission was revoked after this reminder was armed; nothing to do.
         }
+
+        // The alarm already fired (AlarmManager alarms are one-shot), so
+        // the armed record no longer reflects reality -- without this, the
+        // star/reminder UI would keep showing this event as "armed"
+        // forever with no alarm behind it.
+        ReminderStore.disarm(context, eventId)
     }
 
     private fun ensureChannel(context: Context) {
