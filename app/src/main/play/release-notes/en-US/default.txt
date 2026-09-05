@@ -1,0 +1,4 @@
+• Fixed the calendar sometimes loading slowly or not loading
+• Fixed event reminders not staying in sync after schedule changes
+• Fixed a few signup and photo upload issues
+• Various other bug fixes and optimizations
